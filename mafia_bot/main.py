@@ -26,6 +26,7 @@ from handlers.group_cmd import (
 from handlers.dm_cmd import start_handler
 from handlers.callbacks import callback_router
 from handlers.setting_cmd import setting_handler, setting_callback_router
+from handlers.role_lookup import role_lookup_handler
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -108,10 +109,16 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(setting_callback_router, pattern=r"^set:"))
     app.add_handler(CallbackQueryHandler(callback_router))
 
+    # ── 역할 도감 (/도감, /마피아, /경찰 등 한국어 명령) ────────
+    # 그룹 + DM 모두에서 동작 / chat_guard 보다 먼저 등록(group=-1)
+    _korean_cmd = filters.Regex(r'^/[가-힣a-zA-Z0-9_]')
+    app.add_handler(MessageHandler(_korean_cmd, role_lookup_handler), group=-1)
+
     # ── 채팅 감시 (사망자·미참여자 메시지 삭제) ──────────────
-    # 텍스트·스티커·사진·동영상 등 모든 그룹 메시지 감시
+    # 한국어 명령(/마피아 등)은 삭제 대상에서 제외
     app.add_handler(MessageHandler(
-        filters.ChatType.GROUPS & ~filters.StatusUpdate.ALL & ~filters.COMMAND,
+        filters.ChatType.GROUPS & ~filters.StatusUpdate.ALL
+        & ~filters.COMMAND & ~filters.Regex(r'^/[가-힣]'),
         chat_guard_handler,
     ))
 
