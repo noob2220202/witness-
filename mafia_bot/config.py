@@ -6,7 +6,7 @@ load_dotenv()
 BOT_TOKEN: str = os.environ["BOT_TOKEN"]
 
 # 인원 제한
-MIN_PLAYERS: int = 5
+MIN_PLAYERS: int = 4
 MAX_PLAYERS: int = 16
 
 # 페이즈 타이머 (초)

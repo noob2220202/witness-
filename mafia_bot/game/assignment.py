@@ -4,6 +4,7 @@ from game.roles import ROLES, RoleDefinition
 
 # 인원별 배정 테이블
 ASSIGNMENT_TABLE = {
+    4:  {"mafia_base": 1, "mafia_support": 0, "citizen_special": 1, "cult": 0, "neutral": 0},
     5:  {"mafia_base": 1, "mafia_support": 0, "citizen_special": 2, "cult": 0, "neutral": 0},
     6:  {"mafia_base": 2, "mafia_support": 0, "citizen_special": 2, "cult": 0, "neutral": 0},
     7:  {"mafia_base": 2, "mafia_support": 0, "citizen_special": 3, "cult": 0, "neutral": 0},
