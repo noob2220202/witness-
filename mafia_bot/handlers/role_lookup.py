@@ -96,9 +96,9 @@ def _role_card(role: RoleDefinition) -> str:
 
     return (
         f"{faction}  ·  *{esc(role.name)}*\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "━━━━━━━━━━━━━\n"
         f"{role.description}\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "━━━━━━━━━━━━━\n"
         f"🌙 *밤 행동:* {action_str}\n"
         f"🔢 *사용 횟수:* {shots_str}\n"
         f"🏆 *승리 조건:* {esc(win)}"
@@ -112,7 +112,7 @@ def _role_guide() -> str:
         "직업명을 입력하면 상세 정보를 볼 수 있습니다\\.",
         "_예: /마피아  /경찰  /교주  /연쇄살인마_",
         "",
-        "━━━━━━━━━━━━━━━━━━━━━━",
+        "━━━━━━━━━━━━━",
     ]
 
     for faction in FACTION_ORDER:

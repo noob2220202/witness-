@@ -147,6 +147,10 @@ def resolve_night(gs: GameState) -> list[int]:
                 victim.is_protected = False
             continue
 
+        # 야수: 같은 마피아팀 공격 면역 (beast 자신이 타겟일 때 killer가 마피아면 무시)
+        if victim.role_key == "beast" and killer and killer.faction == Faction.MAFIA:
+            continue
+
         # 테러리스트 유폭
         if victim.role_key == "terrorist":
             _kill_player(gs, victim_id, dead_this_night)
