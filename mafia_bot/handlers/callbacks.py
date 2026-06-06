@@ -189,8 +189,8 @@ async def handle_night_target(
             await query.answer("ℹ️ 두 번째 대상을 DM에서 선택해주세요.", show_alert=True)
         return
 
-    # 마피아: 첫 번째 제출이 팀 전체 행동
-    if actor.faction == Faction.MAFIA and role.night_action in ("KILL", "KILL_UNSTOPPABLE", "KILL_TARGETED"):
+    # 마피아 기본 공격 (마피오소/대부만 팀 협조, 짐승인간/청부업자는 독립 행동)
+    if actor.faction == Faction.MAFIA and role.night_action == "KILL":
         if gs.mafia_kill_submitted_by is not None:
             await query.answer("ℹ️ 이미 팀원이 목표를 선택했습니다.", show_alert=True)
             return
@@ -437,6 +437,10 @@ async def handle_judge(
         if target_id not in gs.dead_players:
             gs.dead_players.append(target_id)
         gs.last_vote_dead = target_id
+        # 과학자 부활 예약 (판사 처형 시)
+        if target.role_key == "scientist" and target.shots_remaining == 1:
+            target.shots_remaining = 0
+            target.scientist_revival = True
         await _safe_send(
             context.bot, group_id,
             f"⚖️ *판사의 직권 처형\\!*\n\n"
@@ -447,7 +451,7 @@ async def handle_judge(
             f"⚖️ 판사의 직권 처형으로 사망했습니다\\.\n직업: __{esc(role_name)}__")
         await query.answer("✅ 직권 처형 완료.")
     elif action == "spare":
-        target.politician_immune = True
+        target.spared_this_round = True
         await _safe_send(
             context.bot, group_id,
             f"⚖️ *판사의 무죄 선언\\!*\n\n"

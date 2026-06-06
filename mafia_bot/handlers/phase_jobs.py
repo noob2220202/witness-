@@ -116,9 +116,15 @@ async def advance_phase(
         gs.phase = Phase.NIGHT_RESOLVE
         events = resolve_night(gs)
 
-        # 조사 결과 DM 발송
+        # 조사 결과 DM 발송 (스파이는 마피아 팀 전체에 공유)
         for actor_id, result in gs.investigate_results.items():
             await _safe_dm(bot, actor_id, investigate_result_dm(result))
+            actor = gs.players.get(actor_id)
+            if actor and actor.role_key == "spy":
+                spy_report = f"🕵️ *스파이 보고:*\n{result}"
+                for uid, p in gs.players.items():
+                    if p.is_alive and p.faction == Faction.MAFIA and uid != actor_id:
+                        await _safe_dm(bot, uid, spy_report)
 
         # 기자 결과 공개
         for p in gs.players.values():
@@ -208,15 +214,16 @@ async def advance_phase(
                 await _end_game(bot, context, gs, WinCondition.JESTER)
                 return
 
-            # 마술사 swap 알림
-            orig_target = None
-            magician_swap = False
             # tally_votes가 이미 swap 처리. executed_id가 swap된 결과일 수 있음
-            # 별도 메시지 없이 처형 진행
             executed_p.is_alive = False
             if executed_id not in gs.dead_players:
                 gs.dead_players.append(executed_id)
             gs.last_vote_dead = executed_id
+
+            # 과학자 부활 예약 (투표 처형 시)
+            if executed_p.role_key == "scientist" and executed_p.shots_remaining == 1:
+                executed_p.shots_remaining = 0
+                executed_p.scientist_revival = True
 
             await _safe_send(bot, gid,
                 vote_result_msg(executed_p.display, role_name))
@@ -369,6 +376,10 @@ def _build_night_keyboard(gs: GameState, player, role) -> InlineKeyboardMarkup |
         candidates = [p for p in alive
                       if p.user_id != player.user_id
                       and p.faction != Faction.MAFIA]
+    elif action == "REVIVE":
+        candidates = dead
+        if not candidates:
+            return None
     elif action == "SEANCE":
         candidates = dead
     elif action == "TRACK":

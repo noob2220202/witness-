@@ -32,6 +32,10 @@ def tally_votes(gs: GameState) -> Optional[int]:
     if not p:
         return None
 
+    # 판사 무죄 선언 보호
+    if p.spared_this_round:
+        return None
+
     # 정치인 처형 면제 (1회)
     if p.role_key == "politician" and not p.politician_immune:
         p.politician_immune = True

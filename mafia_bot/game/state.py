@@ -66,6 +66,7 @@ class PlayerState:
     reporter_result:         Optional[str] = None
     disguise_role:           Optional[str] = None
     confirmed_targets:       set = field(default_factory=set)
+    spared_this_round:       bool = False  # 판사 무죄 선언 보호
 
     has_voted:    bool = False
     vote_target:  Optional[int] = None

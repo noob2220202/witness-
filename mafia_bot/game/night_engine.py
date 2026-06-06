@@ -1,5 +1,5 @@
 from typing import Optional
-from game.state import GameState, PlayerState, Faction, WinCondition
+from game.state import GameState, PlayerState, Faction, WinCondition  # noqa: F401 (WinCondition used in STEAL_ABILITY)
 from game.roles import ROLES
 
 
@@ -127,7 +127,7 @@ def resolve_night(gs: GameState) -> list[int]:
             tid = actions.get(actor_id)
             if tid and tid in gs.players and gs.players[tid].is_alive:
                 to_kill[tid] = actor_id
-                if role.night_action == "KILL_UNSTOPPABLE":
+                if role.night_action in ("KILL_UNSTOPPABLE", "KILL_TARGETED"):
                     unstoppable_kills.add(tid)
 
     dead_this_night: list[int] = []
@@ -181,6 +181,18 @@ def resolve_night(gs: GameState) -> list[int]:
                 if stolen:
                     p.role_key = stolen.key
                     p.shots_remaining = stolen.max_shots
+        elif role.night_action == "STEAL_ABILITY":
+            # 도둑: 시민 1명의 직업을 영구 복사 (마피아 진영 유지)
+            tid = actions.get(actor_id)
+            if tid and tid in gs.players:
+                target = gs.players[tid]
+                if target.is_alive and target.faction == Faction.CITIZEN:
+                    stolen = ROLES.get(target.role_key)
+                    if stolen and stolen.night_action:
+                        p.role_key = stolen.key
+                        p.shots_remaining = stolen.max_shots
+                        p.faction = Faction.MAFIA
+                        p.win_cond = WinCondition.MAFIA
         elif role.night_action == "SWAP_PREPARE":
             tid = actions.get(actor_id)
             if tid and p.shots_remaining != 0:
@@ -313,6 +325,8 @@ def reset_night_state(gs: GameState):
         p.night_action_submitted = False
         p.has_voted = False
         p.vote_target = None
+        p.spared_this_round = False          # 판사 무죄 선언 초기화
+        p.vote_weight = 2 if p.role_key == "politician" else 1  # 건달 DISARM 초기화
         # swap_target은 마술사가 처형될 때까지 유지 (처형 시 vote_engine에서 소비)
     gs.night_actions.clear()
     gs.mafia_kill_submitted_by = None

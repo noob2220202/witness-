@@ -37,6 +37,12 @@ def check_win(gs: GameState) -> WinCondition:
 
     # ── 시민 승리: 마피아 전멸 + 교주팀 전멸(또는 없음) ─────
     if not mafia_alive and not cult_alive:
+        # 생존자만 남은 경우 생존자 승리
+        citizen_alive_now = [p for p in alive if p.faction == Faction.CITIZEN]
+        if not citizen_alive_now:
+            survivor_alive = [p for p in alive if p.win_cond == WinCondition.SURVIVOR]
+            if survivor_alive:
+                return WinCondition.SURVIVOR
         return WinCondition.CITIZEN
 
     # ── 예언자: 시민팀 마지막 생존자 ────────────────────────
