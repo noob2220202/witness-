@@ -22,7 +22,7 @@ from game.win_checker import check_win, check_jester_win
 from messages.templates import (
     esc,
     night_start_msg, night_action_prompt, no_night_action_msg,
-    day_announce_msg, day_discuss_msg,
+    day_announce_msg, day_discuss_msg, morning_status_msg,
     vote_start_msg, vote_result_msg,
     politician_immune_msg, magician_swap_msg,
     win_announce_msg, investigate_result_dm,
@@ -171,8 +171,7 @@ async def advance_phase(
     # ── DAY_ANNOUNCE → DAY_DISCUSS ─────────────────────────────
     if gs.phase == Phase.DAY_ANNOUNCE:
         gs.phase = Phase.DAY_DISCUSS
-        await _safe_send(bot, gid,
-            day_discuss_msg(gs.day_number, config.DAY_DISCUSS_TIMEOUT))
+        await _safe_send(bot, gid, morning_status_msg(gs))
         schedule_phase(context, gid, config.DAY_DISCUSS_TIMEOUT, "discuss")
         return
 

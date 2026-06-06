@@ -328,3 +328,55 @@ async def migrate_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         gs.group_chat_id = new_id
         games[new_id] = gs
         log.info("그룹 마이그레이션: %s → %s", old_id, new_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 채팅 감시: 사망자·미참여자 메시지 자동 삭제
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def chat_guard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    게임 진행 중(밤·낮 토론·투표) 그룹 메시지를 감시.
+    - 사망한 플레이어
+    - 게임에 참여하지 않은 유저
+    위 두 경우의 메시지를 즉시 삭제.
+    """
+    msg = update.effective_message
+    if not msg:
+        return
+
+    group_id = update.effective_chat.id
+    user = update.effective_user
+    if not user:
+        return
+
+    games: dict = context.bot_data.get("games", {})
+    gs = games.get(group_id)
+
+    # 게임 없거나 로비/종료 중에는 삭제 안 함
+    if gs is None or gs.phase in (Phase.LOBBY, Phase.ENDED):
+        return
+
+    player = gs.players.get(user.id)
+
+    should_delete = False
+
+    if player is None:
+        # 미참여자
+        should_delete = True
+    elif not player.is_alive:
+        # 사망자
+        should_delete = True
+
+    if should_delete:
+        try:
+            await context.bot.delete_message(
+                chat_id=group_id,
+                message_id=msg.message_id,
+            )
+            log.info(
+                "메시지 삭제: user=%s(%s) group=%s phase=%s",
+                user.id, user.first_name, group_id, gs.phase.value,
+            )
+        except Exception as e:
+            log.warning("메시지 삭제 실패: %s", e)

@@ -174,6 +174,90 @@ def day_discuss_msg(day: int, timeout: int) -> str:
     )
 
 
+# 직업별 이모지
+_ROLE_EMOJI: dict[str, str] = {
+    "mafioso":       "🤵🏼",
+    "godfather":     "👑",
+    "spy":           "🕵️",
+    "madam":         "💃",
+    "beast":         "🐺",
+    "hitman":        "🎯",
+    "witch":         "🐸",
+    "fraud":         "🎭",
+    "scientist":     "🧪",
+    "thief":         "🃏",
+    "police":        "👮",
+    "doctor":        "👨🏼‍⚕️",
+    "vigilante":     "🔫",
+    "agent":         "🕶️",
+    "soldier":       "🪖",
+    "politician":    "🎩",
+    "medium":        "🔮",
+    "lover":         "💕",
+    "gangster":      "🦹",
+    "reporter":      "📰",
+    "detective":     "🔎",
+    "grave_robber":  "⚰️",
+    "terrorist":     "💣",
+    "priest":        "✝️",
+    "prophet":       "🌟",
+    "judge":         "⚖️",
+    "magician":      "🪄",
+    "psychologist":  "🧠",
+    "cult_leader":   "🛐",
+    "fanatic":       "🙏",
+    "serial_killer": "🗡️",
+    "jester":        "🃏",
+    "survivor":      "🛡️",
+}
+
+
+def morning_status_msg(gs: GameState) -> str:
+    """
+    아침 토론 시작 시 전송하는 풀 상태 메시지.
+    생존자 목록 + 현재 살아있는 직업 목록(익명) + 총 인원
+    """
+    from game.roles import ROLES
+
+    alive = gs.alive_players()
+
+    # 생존자 목록 (참가 순서 번호 유지)
+    all_ids = list(gs.players.keys())
+    survivor_lines = []
+    for p in alive:
+        num = all_ids.index(p.user_id) + 1
+        survivor_lines.append(f"  {num}\\. {esc(p.display)}")
+    survivors_str = "\n".join(survivor_lines)
+
+    # 직업 목록 (살아있는 플레이어 직업, 익명·중복 표시)
+    role_counts: dict[str, int] = {}
+    for p in alive:
+        role_counts[p.role_key] = role_counts.get(p.role_key, 0) + 1
+
+    role_parts = []
+    for rk, cnt in role_counts.items():
+        role = ROLES.get(rk)
+        if not role:
+            continue
+        emoji = _ROLE_EMOJI.get(rk, "👤")
+        name = esc(role.name)
+        if cnt > 1:
+            role_parts.append(f"{emoji} {name} \\- {cnt}")
+        else:
+            role_parts.append(f"{emoji} {name}")
+    roles_str = ",  ".join(role_parts)
+
+    total = len(alive)
+
+    return (
+        f"☀️ *{esc(str(gs.day_number))}일째 아침이 밝았습니다\\.*\n\n"
+        f"*생존자 목록:*\n{survivors_str}\n\n"
+        f"*직업 목록:*\n{roles_str}\n"
+        f"총 인원 : *{esc(str(total))}명*\n\n"
+        "> 아침이 밝았습니다\\. 지난 밤의 일을 자유롭게 토론하고 마피아를 찾아내세요\\."
+    )
+
+
 # ── 투표 ────────────────────────────────────────────────────────────────────
 
 def vote_start_msg(day: int, alive_cnt: int, timeout: int) -> str:

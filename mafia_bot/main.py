@@ -21,6 +21,7 @@ from handlers.group_cmd import (
     skip_handler,
     endgame_handler,
     migrate_handler,
+    chat_guard_handler,
 )
 from handlers.dm_cmd import start_handler
 from handlers.callbacks import callback_router
@@ -101,6 +102,13 @@ def main() -> None:
 
     # ── InlineKeyboard 콜백 ──────────────────────────────────
     app.add_handler(CallbackQueryHandler(callback_router))
+
+    # ── 채팅 감시 (사망자·미참여자 메시지 삭제) ──────────────
+    # 텍스트·스티커·사진·동영상 등 모든 그룹 메시지 감시
+    app.add_handler(MessageHandler(
+        filters.ChatType.GROUPS & ~filters.StatusUpdate.ALL & ~filters.COMMAND,
+        chat_guard_handler,
+    ))
 
     log.info("폴링 시작...")
     app.run_polling(allowed_updates=["message", "callback_query"])
