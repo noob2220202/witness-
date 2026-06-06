@@ -25,6 +25,7 @@ from handlers.group_cmd import (
 )
 from handlers.dm_cmd import start_handler
 from handlers.callbacks import callback_router
+from handlers.setting_cmd import setting_handler, setting_callback_router
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -89,6 +90,9 @@ def main() -> None:
     app.add_handler(CommandHandler(
         "endgame", endgame_handler, filters=filters.ChatType.GROUPS
     ))
+    app.add_handler(CommandHandler(
+        "setting", setting_handler, filters=filters.ChatType.GROUPS
+    ))
 
     # ── DM 명령어 ────────────────────────────────────────────
     app.add_handler(CommandHandler(
@@ -101,6 +105,7 @@ def main() -> None:
     ))
 
     # ── InlineKeyboard 콜백 ──────────────────────────────────
+    app.add_handler(CallbackQueryHandler(setting_callback_router, pattern=r"^set:"))
     app.add_handler(CallbackQueryHandler(callback_router))
 
     # ── 채팅 감시 (사망자·미참여자 메시지 삭제) ──────────────

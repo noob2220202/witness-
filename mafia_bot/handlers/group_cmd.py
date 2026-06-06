@@ -15,6 +15,7 @@ from handlers.phase_jobs import (
     schedule_phase, cancel_phase_job, send_role_dms, send_night_action_dms,
     _safe_send, advance_phase,
 )
+from handlers.setting_cmd import setting_handler, get_settings
 from messages.templates import (
     esc,
     lobby_msg, status_msg,
@@ -182,13 +183,22 @@ async def begin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         return
 
-    # 직업 배정
+    # 직업 배정 (설정에서 비활성 직업 반영)
     player_ids = list(gs.players.keys())
     names = {uid: p.username for uid, p in gs.players.items()}
     displays = {uid: p.display for uid, p in gs.players.items()}
 
-    assignment = assign_roles(player_ids)
+    settings = get_settings(context.bot_data, group_id)
+    disabled_roles = settings.get("disabled_roles", set())
+    saved_timers = settings.get("timers", {})
+
+    assignment = assign_roles(player_ids, disabled_roles=disabled_roles)
     gs.players = build_player_states(assignment, names, displays)
+
+    # 설정 타이머 적용
+    for key in ("lobby", "night", "discuss", "vote"):
+        if key in saved_timers:
+            gs.timers[key] = saved_timers[key]
 
     # 로비 타임아웃 취소
     cancel_phase_job(context, gs)
@@ -216,7 +226,7 @@ async def begin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await send_night_action_dms(context.bot, gs)
 
     # 밤 타이머 예약
-    schedule_phase(context, group_id, config.NIGHT_TIMEOUT, "night")
+    schedule_phase(context, group_id, gs.timers["night"], "night")
 
     log.info("게임 시작: group_id=%s, players=%s", group_id, len(gs.players))
 

@@ -20,6 +20,7 @@ from handlers.phase_jobs import (
     all_night_actions_submitted, all_votes_submitted,
     _safe_dm, _safe_send,
     _build_vote_keyboard,
+    _build_night_target2_keyboard,
 )
 from messages.templates import (
     esc, lobby_msg,
@@ -49,6 +50,9 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         elif action == "night_target" and len(parts) >= 3:
             await handle_night_target(query, context, int(parts[1]), int(parts[2]))
+
+        elif action == "night_target2" and len(parts) >= 3:
+            await handle_night_target2(query, context, int(parts[1]), int(parts[2]))
 
         elif action == "disguise" and len(parts) >= 3:
             await handle_disguise(query, context, int(parts[1]), parts[2])
@@ -152,6 +156,39 @@ async def handle_night_target(
         await query.answer("❌ 밤 행동이 없는 직업입니다.", show_alert=True)
         return
 
+    # ── 심리학자 2단계 처리 ──────────────────────────────────────
+    if role.night_action == "COMPARE":
+        if actor.night_target is None:
+            # 1단계: 첫 번째 대상 저장 후 2단계 키보드 전송
+            target_p = gs.players.get(target_id)
+            if not target_p or not target_p.is_alive:
+                await query.answer("❌ 올바른 대상이 아닙니다.", show_alert=True)
+                return
+            actor.night_target = target_id
+            keyboard2 = _build_night_target2_keyboard(gs, actor, target_id)
+            if keyboard2:
+                await _safe_dm(
+                    context.bot, actor_id,
+                    f"🧠 *1번째 대상:* _{esc(target_p.display)}_\n\n두 번째 비교 대상을 선택하세요\\:",
+                    reply_markup=keyboard2,
+                )
+            else:
+                # 비교 가능한 두 번째 대상 없음 — 스킵
+                actor.compare_target = None
+                actor.night_action_submitted = True
+                gs.night_actions[actor_id] = target_id
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+            await query.answer("첫 번째 대상을 선택했습니다.")
+            if all_night_actions_submitted(gs):
+                cancel_phase_job(context, gs)
+                await advance_phase(context, gs)
+        else:
+            await query.answer("ℹ️ 두 번째 대상을 DM에서 선택해주세요.", show_alert=True)
+        return
+
     # 마피아: 첫 번째 제출이 팀 전체 행동
     if actor.faction == Faction.MAFIA and role.night_action in ("KILL", "KILL_UNSTOPPABLE", "KILL_TARGETED"):
         if gs.mafia_kill_submitted_by is not None:
@@ -189,6 +226,59 @@ async def handle_night_target(
     await query.answer("✅ 행동이 기록되었습니다.")
 
     # 전원 제출 시 조기 진행
+    if all_night_actions_submitted(gs):
+        cancel_phase_job(context, gs)
+        await advance_phase(context, gs)
+
+
+async def handle_night_target2(
+    query, context: ContextTypes.DEFAULT_TYPE,
+    group_id: int, target_id: int,
+) -> None:
+    """심리학자 두 번째 비교 대상 처리."""
+    actor_id = query.from_user.id
+    gs = context.bot_data.get("games", {}).get(group_id)
+
+    if gs is None or gs.phase != Phase.NIGHT:
+        await query.answer("❌ 밤 행동 단계가 아닙니다.", show_alert=True)
+        return
+
+    actor = gs.players.get(actor_id)
+    if not actor or not actor.is_alive:
+        await query.answer("❌ 게임 참가자가 아닙니다.", show_alert=True)
+        return
+    if actor.night_action_submitted:
+        await query.answer("ℹ️ 이미 행동을 제출했습니다.", show_alert=True)
+        return
+
+    role = ROLES.get(actor.role_key)
+    if not role or role.night_action != "COMPARE":
+        await query.answer("❌ 심리학자 전용입니다.", show_alert=True)
+        return
+
+    target_p = gs.players.get(target_id)
+    if not target_p or not target_p.is_alive:
+        await query.answer("❌ 올바른 대상이 아닙니다.", show_alert=True)
+        return
+
+    actor.compare_target = target_id
+    actor.night_action_submitted = True
+    gs.night_actions[actor_id] = actor.night_target  # 첫 번째 대상을 메인 타겟으로
+
+    first_p = gs.players.get(actor.night_target)
+    first_name = first_p.display if first_p else "???"
+
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    await query.answer("✅ 두 번째 대상 선택 완료.")
+    await _safe_dm(
+        context.bot, actor_id,
+        f"🧠 비교 중\\: *{esc(first_name)}* vs *{esc(target_p.display)}*\n결과는 밤이 끝나면 알려드립니다\\.",
+    )
+
     if all_night_actions_submitted(gs):
         cancel_phase_job(context, gs)
         await advance_phase(context, gs)

@@ -172,7 +172,7 @@ async def advance_phase(
     if gs.phase == Phase.DAY_ANNOUNCE:
         gs.phase = Phase.DAY_DISCUSS
         await _safe_send(bot, gid, morning_status_msg(gs))
-        schedule_phase(context, gid, config.DAY_DISCUSS_TIMEOUT, "discuss")
+        schedule_phase(context, gid, gs.timers["discuss"], "discuss")
         return
 
     # ── DAY_DISCUSS → VOTE ─────────────────────────────────────
@@ -180,11 +180,11 @@ async def advance_phase(
         gs.phase = Phase.VOTE
         alive_pairs = [(p.user_id, p.display) for p in gs.alive_players()]
         keyboard = _build_vote_keyboard(gs)
-        msg = vote_start_msg(gs.day_number, gs.alive_count(), config.VOTE_TIMEOUT)
+        msg = vote_start_msg(gs.day_number, gs.alive_count(), gs.timers["vote"])
         sent = await _safe_send(bot, gid, msg, reply_markup=keyboard)
         if sent:
             gs.vote_msg_id = sent.message_id
-        schedule_phase(context, gid, config.VOTE_TIMEOUT, "vote")
+        schedule_phase(context, gid, gs.timers["vote"], "vote")
         return
 
     # ── VOTE → VOTE_RESOLVE → 다음 밤 or 종료 ──────────────────
@@ -258,9 +258,22 @@ async def _start_night(
     context: ContextTypes.DEFAULT_TYPE,
     gs: GameState,
 ) -> None:
-    """밤 페이즈 시작: 영상 → 메시지 → 행동 DM 전송 → 타이머 예약."""
+    """밤 페이즈 시작: 과학자 부활 → 영상 → 메시지 → 행동 DM 전송 → 타이머 예약."""
     gs.phase = Phase.NIGHT
     gid = gs.group_chat_id
+
+    # 과학자 부활 처리
+    for uid, p in list(gs.players.items()):
+        if p.scientist_revival:
+            p.is_alive = True
+            p.scientist_revival = False
+            if uid in gs.dead_players:
+                gs.dead_players.remove(uid)
+            await _safe_send(bot, gid,
+                f"🧪 *과학자 부활\\!* *{esc(p.display)}* 이\\(가\\) 기적적으로 되살아났습니다\\!")
+            await _safe_dm(bot, uid,
+                "🧪 당신은 *과학자의 기술*로 __부활__했습니다\\! 게임에 복귀합니다\\.")
+
     await _send_transition_gif(bot, gid, NIGHT_GIF)
     await _safe_send(bot, gid,
         night_start_msg(gs.day_number, gs.alive_count()))
@@ -268,7 +281,7 @@ async def _start_night(
     await send_role_dms(bot, gs)
     await send_night_action_dms(bot, gs)
 
-    schedule_phase(context, gid, config.NIGHT_TIMEOUT, "night")
+    schedule_phase(context, gid, gs.timers["night"], "night")
 
 
 async def send_role_dms(bot: Bot, gs: GameState) -> None:
@@ -360,9 +373,8 @@ def _build_night_keyboard(gs: GameState, player, role) -> InlineKeyboardMarkup |
     elif action == "TRACK":
         candidates = [p for p in alive if p.user_id != player.user_id]
     elif action == "STEAL_ROLE":
-        # 도굴꾼: 이번 밤 사망자
-        candidates = [gs.players[uid] for uid in gs.last_night_dead
-                      if uid in gs.players]
+        # 도굴꾼: 이번 밤 사망할 가능성이 있는 생존자 선택 (밤 결산 시 실제 사망자만 적용)
+        candidates = [p for p in alive if p.user_id != player.user_id]
         if not candidates:
             return None
     elif action == "STEAL_ABILITY":
@@ -398,6 +410,24 @@ def _build_night_keyboard(gs: GameState, player, role) -> InlineKeyboardMarkup |
         cb = f"night_target:{gid}:{c.user_id}"
         buttons.append([InlineKeyboardButton(c.display, callback_data=cb)])
 
+    return InlineKeyboardMarkup(buttons)
+
+
+def _build_night_target2_keyboard(
+    gs: GameState, player, first_target_id: int
+) -> InlineKeyboardMarkup | None:
+    """심리학자 두 번째 대상 선택 키보드. 자기 자신·첫 번째 대상 제외."""
+    gid = gs.group_chat_id
+    candidates = [
+        p for p in gs.alive_players()
+        if p.user_id != player.user_id and p.user_id != first_target_id
+    ]
+    if not candidates:
+        return None
+    buttons = [
+        [InlineKeyboardButton(c.display, callback_data=f"night_target2:{gid}:{c.user_id}")]
+        for c in candidates
+    ]
     return InlineKeyboardMarkup(buttons)
 
 

@@ -30,8 +30,14 @@ CITIZEN_SPECIAL_POOL = [
 NEUTRAL_POOL = ["serial_killer", "jester", "survivor"]
 
 
-def assign_roles(player_ids: list[int]) -> dict[int, RoleDefinition]:
+def assign_roles(
+    player_ids: list[int],
+    disabled_roles: set | None = None,
+) -> dict[int, RoleDefinition]:
     """player_ids 목록에 직업을 배정해 {user_id: RoleDefinition} 반환"""
+    if disabled_roles is None:
+        disabled_roles = set()
+
     n = len(player_ids)
     if n not in ASSIGNMENT_TABLE:
         raise ValueError(f"지원하지 않는 인원수: {n}")
@@ -42,40 +48,54 @@ def assign_roles(player_ids: list[int]) -> dict[int, RoleDefinition]:
     idx = 0
     assignment = {}
 
-    # 1. 마피아 기본 (12인+ 면 첫 번째를 대부로)
+    # 1. 마피아 기본 (12인+ 면 첫 번째를 대부로, 비활성화 시 mafioso로 대체)
     for i in range(table["mafia_base"]):
-        role_key = "godfather" if (i == 0 and n >= 12) else "mafioso"
+        use_godfather = (i == 0 and n >= 12 and "godfather" not in disabled_roles)
+        role_key = "godfather" if use_godfather else "mafioso"
         assignment[shuffled[idx]] = ROLES[role_key]
         idx += 1
 
-    # 2. 마피아 보조
-    support_picks = random.sample(MAFIA_SUPPORT_POOL, table["mafia_support"])
+    # 2. 마피아 보조 (비활성화 제외)
+    available_support = [r for r in MAFIA_SUPPORT_POOL if r not in disabled_roles]
+    support_count = min(table["mafia_support"], len(available_support))
+    support_picks = random.sample(available_support, support_count)
     for rk in support_picks:
         assignment[shuffled[idx]] = ROLES[rk]
         idx += 1
+    # 부족한 슬롯은 mafioso로 채움
+    for _ in range(table["mafia_support"] - support_count):
+        assignment[shuffled[idx]] = ROLES["mafioso"]
+        idx += 1
 
-    # 3. 경찰 고정
-    assignment[shuffled[idx]] = ROLES["police"]
+    # 3. 경찰 고정 (비활성화 시 agent로 대체)
+    police_key = "police" if "police" not in disabled_roles else "agent"
+    assignment[shuffled[idx]] = ROLES[police_key]
     idx += 1
 
-    # 4. 의사 고정
-    assignment[shuffled[idx]] = ROLES["doctor"]
+    # 4. 의사 고정 (비활성화 시 soldier로 대체)
+    doctor_key = "doctor" if "doctor" not in disabled_roles else "soldier"
+    assignment[shuffled[idx]] = ROLES[doctor_key]
     idx += 1
 
     # 5. 교주
-    if table["cult"] > 0:
+    if table["cult"] > 0 and "cult_leader" not in disabled_roles:
         assignment[shuffled[idx]] = ROLES["cult_leader"]
         idx += 1
+    elif table["cult"] > 0:
+        # 교주 비활성화 시 시민 특직으로 대체 (remaining에서 처리됨)
+        pass
 
     # 6. 중립
-    if table["neutral"] > 0:
-        nk = random.choice(NEUTRAL_POOL)
+    available_neutral = [r for r in NEUTRAL_POOL if r not in disabled_roles]
+    if table["neutral"] > 0 and available_neutral:
+        nk = random.choice(available_neutral)
         assignment[shuffled[idx]] = ROLES[nk]
         idx += 1
 
     # 7. 시민 특직 (남은 슬롯)
     remaining = n - idx
-    picks = _pick_special(CITIZEN_SPECIAL_POOL[:], remaining)
+    available_special = [r for r in CITIZEN_SPECIAL_POOL if r not in disabled_roles]
+    picks = _pick_special(available_special, remaining, disabled_roles)
     for rk in picks:
         assignment[shuffled[idx]] = ROLES[rk]
         idx += 1
@@ -83,17 +103,17 @@ def assign_roles(player_ids: list[int]) -> dict[int, RoleDefinition]:
     return assignment
 
 
-def _pick_special(pool: list[str], count: int) -> list[str]:
-    """
-    연인(lover)은 2슬롯 소모 특직 선택.
-    여기서는 연인을 일반 특직 풀에서 제외하고 40% 확률로 2칸 소모로 추가.
-    """
+def _pick_special(
+    pool: list[str], count: int, disabled_roles: set | None = None
+) -> list[str]:
+    """특직 선택. lover는 disabled_roles에 없을 때 40% 확률로 2슬롯 추가."""
+    if disabled_roles is None:
+        disabled_roles = set()
     result = []
     remaining = count
     available = pool[:]
 
-    # 40% 확률로 lover 쌍 추가 (슬롯 2칸)
-    if remaining >= 2 and random.random() < 0.4:
+    if remaining >= 2 and random.random() < 0.4 and "lover" not in disabled_roles:
         result.extend(["lover", "lover"])
         remaining -= 2
 

@@ -34,45 +34,39 @@ class WinCondition(Enum):
 @dataclass
 class PlayerState:
     user_id:   int
-    username:  str   # @username 또는 first_name
-    display:   str   # 표시용 이름
+    username:  str
+    display:   str
 
-    role_key:  str   # ROLES dict 키
+    role_key:  str
     faction:   Faction
     win_cond:  WinCondition
 
-    # 생사
-    is_alive:  bool = True
+    is_alive:    bool = True
+    vote_weight: int  = 1
 
-    # 투표 가중치
-    vote_weight: int = 1  # 정치인=2, 건달 피해=0
+    # ── 밤 행동 (매 밤 reset) ─────────────────────────────────
+    night_target:            Optional[int] = None
+    compare_target:          Optional[int] = None  # 심리학자 두 번째 대상
+    is_roleblocked:          bool = False
+    is_protected:            bool = False
+    is_frogged:              bool = False
+    night_action_submitted:  bool = False
 
-    # 밤 행동 (매 밤 reset)
-    night_target:       Optional[int] = None
-    is_roleblocked:     bool = False
-    is_protected:       bool = False
-    is_frogged:         bool = False
-    night_action_submitted: bool = False
+    # ── 직업별 특수 카운터 ────────────────────────────────────
+    armor_used:              bool = False
+    politician_immune:       bool = False
+    shots_remaining:         int  = -1      # -1=무한, 0=소진
+    is_revealed:             bool = False
+    self_heal_used:          bool = False
+    revived:                 bool = False
+    scientist_revival:       bool = False   # 다음 밤 부활 예약
+    cult_converted:          bool = False
+    lover_id:                Optional[int] = None
+    swap_target:             Optional[int] = None   # 마술사 예약 대상
+    reporter_result:         Optional[str] = None
+    disguise_role:           Optional[str] = None
+    confirmed_targets:       set = field(default_factory=set)
 
-    # 직업별 특수 카운터
-    armor_used:         bool = False   # 군인 방탄 소진
-    politician_immune:  bool = False   # 처형 면제 소진
-    shots_remaining:    int  = -1      # -1 무한, 0 소진
-    is_revealed:        bool = False   # 판사 정체 공개
-    self_heal_used:     bool = False   # 의사 자힐 소진
-    revived:            bool = False   # 부활 플래그
-    cult_converted:     bool = False   # 교주 포교됨
-    lover_id:           Optional[int] = None
-    swap_target:        Optional[int] = None
-    reporter_result:    Optional[str] = None   # 기자 조사 결과
-
-    # 사기꾼 위장 직업
-    disguise_role:      Optional[str] = None
-
-    # 청부업자 확인 대상 목록
-    confirmed_targets:  set = field(default_factory=set)
-
-    # 투표
     has_voted:    bool = False
     vote_target:  Optional[int] = None
 
@@ -85,30 +79,30 @@ class GameState:
     phase:      Phase = Phase.LOBBY
     day_number: int   = 0
 
-    players:      dict = field(default_factory=dict)   # {user_id: PlayerState}
-    dead_players: list = field(default_factory=list)   # [user_id]
+    players:      dict = field(default_factory=dict)
+    dead_players: list = field(default_factory=list)
 
-    # 밤 행동: actor_id -> target_id
-    night_actions:   dict = field(default_factory=dict)
+    night_actions:           dict = field(default_factory=dict)
     mafia_kill_submitted_by: Optional[int] = None
 
-    # 투표: voter_id -> target_id
     votes: dict = field(default_factory=dict)
 
-    # 메시지 ID (edit용)
     lobby_msg_id:      Optional[int] = None
     vote_msg_id:       Optional[int] = None
     last_group_msg_id: Optional[int] = None
 
-    # 페이즈 타이머 job name
     phase_job: Optional[str] = None
 
-    # 조사 결과 {actor_id: result_str}
     investigate_results: dict = field(default_factory=dict)
 
-    # 이번 밤 사망자 / 이번 낮 처형자
-    last_night_dead: list = field(default_factory=list)
-    last_vote_dead:  Optional[int] = None
+    last_night_dead:  list = field(default_factory=list)
+    prev_night_dead:  list = field(default_factory=list)  # 지난 밤 사망자 (도굴꾼용)
+    last_vote_dead:   Optional[int] = None
+
+    # 커스텀 타이머 (설정에서 덮어씀)
+    timers: dict = field(default_factory=lambda: {
+        "lobby": 300, "night": 90, "discuss": 180, "vote": 60,
+    })
 
     def alive_players(self) -> list:
         return [p for p in self.players.values() if p.is_alive]
