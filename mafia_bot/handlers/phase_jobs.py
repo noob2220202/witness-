@@ -172,6 +172,7 @@ async def advance_phase(
     if gs.phase == Phase.DAY_ANNOUNCE:
         gs.phase = Phase.DAY_DISCUSS
         await _safe_send(bot, gid, morning_status_msg(gs))
+        await _send_judge_dm(bot, gs)
         schedule_phase(context, gid, gs.timers["discuss"], "discuss")
         return
 
@@ -411,6 +412,44 @@ def _build_night_keyboard(gs: GameState, player, role) -> InlineKeyboardMarkup |
         buttons.append([InlineKeyboardButton(c.display, callback_data=cb)])
 
     return InlineKeyboardMarkup(buttons)
+
+
+async def _send_judge_dm(bot: Bot, gs: GameState) -> None:
+    """낮 토론 시작 시 판사에게 능력 사용 키보드 DM 전송."""
+    gid = gs.group_chat_id
+    for uid, p in gs.players.items():
+        if not p.is_alive or p.role_key != "judge":
+            continue
+        if p.shots_remaining == 0:
+            continue  # 이미 사용함
+        targets = [t for t in gs.alive_players() if t.user_id != uid]
+        if not targets:
+            continue
+        rows = []
+        for t in targets:
+            rows.append([
+                InlineKeyboardButton(
+                    f"⚖️ 처형: {t.display}",
+                    callback_data=f"judge:{gid}:execute:{t.user_id}",
+                ),
+                InlineKeyboardButton(
+                    f"🛡️ 무죄: {t.display}",
+                    callback_data=f"judge:{gid}:spare:{t.user_id}",
+                ),
+            ])
+        rows.append([
+            InlineKeyboardButton("❌ 이번 낮 사용 안 함", callback_data=f"judge:{gid}:skip:0")
+        ])
+        keyboard = InlineKeyboardMarkup(rows)
+        await _safe_dm(
+            bot, uid,
+            "⚖️ *판사 능력*\n\n"
+            "정체를 공개하고 능력을 사용할 수 있습니다\\. \\(1회\\)\n\n"
+            "• *처형* — 즉시 대상을 처형합니다\n"
+            "• *무죄* — 이번 낮 투표 처형에서 대상을 면제합니다\n\n"
+            "> ⚠️ 사용 즉시 그룹에 정체가 공개됩니다\\.",
+            reply_markup=keyboard,
+        )
 
 
 def _build_night_target2_keyboard(

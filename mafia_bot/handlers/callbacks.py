@@ -408,6 +408,20 @@ async def handle_judge(
         await query.answer("❌ 이미 권한을 사용했습니다.", show_alert=True)
         return
 
+    # 사용 안 함
+    if action == "skip":
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await query.answer("이번 낮 사용하지 않습니다.")
+        return
+
+    # 낮 단계 확인 (토론 or 투표 중에만)
+    if gs.phase not in (Phase.DAY_DISCUSS, Phase.VOTE):
+        await query.answer("❌ 낮 토론/투표 단계에서만 사용 가능합니다.", show_alert=True)
+        return
+
     target = gs.players.get(target_id)
     if not target or not target.is_alive:
         await query.answer("❌ 올바른 대상이 아닙니다.", show_alert=True)
@@ -422,21 +436,25 @@ async def handle_judge(
         target.is_alive = False
         if target_id not in gs.dead_players:
             gs.dead_players.append(target_id)
+        gs.last_vote_dead = target_id
         await _safe_send(
             context.bot, group_id,
             f"⚖️ *판사의 직권 처형\\!*\n\n"
-            f"*{esc(target.display)}* 이\\(가\\) 판사에 의해 처형되었습니다\\.\n"
-            f"직업: __{esc(role_name)}__"
+            f"*{esc(judge.display)}* 이\\(가\\) 정체를 공개하고 직권 처형을 선언했습니다\\.\n\n"
+            f"💀 *{esc(target.display)}* — 직업: __{esc(role_name)}__"
         )
-        await query.answer("처형 완료.")
+        await _safe_dm(context.bot, target_id,
+            f"⚖️ 판사의 직권 처형으로 사망했습니다\\.\n직업: __{esc(role_name)}__")
+        await query.answer("✅ 직권 처형 완료.")
     elif action == "spare":
         target.politician_immune = True
         await _safe_send(
             context.bot, group_id,
             f"⚖️ *판사의 무죄 선언\\!*\n\n"
-            f"*{esc(target.display)}* 이\\(가\\) 이번 낮 처형에서 면제됩니다\\."
+            f"*{esc(judge.display)}* 이\\(가\\) 정체를 공개하고 무죄를 선언했습니다\\.\n\n"
+            f"🛡️ *{esc(target.display)}* 은\\(는\\) 이번 낮 투표 처형에서 면제됩니다\\."
         )
-        await query.answer("무죄 선언 완료.")
+        await query.answer("✅ 무죄 선언 완료.")
 
     try:
         await query.edit_message_reply_markup(reply_markup=None)
