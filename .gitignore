@@ -2,3 +2,5 @@
 *.pyc
 .env
 mafia_bot/data/*.pickle
+logs/*.log
+mafia_bot/data/*.pickle
