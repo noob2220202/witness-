@@ -4,9 +4,15 @@ advance_phase() 가 유일한 상태 머신 진입점.
 타이머 만료와 조기 진행(행동 전원 제출) 모두 이 함수를 호출한다.
 """
 import logging
+import os
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
+
+# 페이즈 전환 영상 경로 (봇 실행 위치 기준)
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+NIGHT_GIF = os.path.join(_BASE_DIR, "data", "night_transition.mp4")  # 낮→밤
+DAY_GIF   = os.path.join(_BASE_DIR, "data", "day_transition.mp4")    # 밤→아침
 
 from game.state import GameState, Phase, Faction, WinCondition
 from game.roles import ROLES
@@ -146,6 +152,7 @@ async def advance_phase(
                 role = ROLES.get(p.role_key)
                 dead_pairs.append((p.display, role.name if role else "???"))
 
+        await _send_transition_gif(bot, gid, DAY_GIF)
         await _safe_send(bot, gid, day_announce_msg(gs, dead_pairs))
 
         # 이벤트 메시지 (마녀, 성직자 등)
@@ -252,9 +259,10 @@ async def _start_night(
     context: ContextTypes.DEFAULT_TYPE,
     gs: GameState,
 ) -> None:
-    """밤 페이즈 시작: 메시지 발송 + 행동 DM 전송 + 타이머 예약."""
+    """밤 페이즈 시작: 영상 → 메시지 → 행동 DM 전송 → 타이머 예약."""
     gs.phase = Phase.NIGHT
     gid = gs.group_chat_id
+    await _send_transition_gif(bot, gid, NIGHT_GIF)
     await _safe_send(bot, gid,
         night_start_msg(gs.day_number, gs.alive_count()))
 
@@ -468,3 +476,14 @@ async def _safe_dm(bot: Bot, user_id: int, text: str, **kwargs):
 def esc_cb(text: str) -> str:
     """callback_data 용 간단 이스케이프 (콜론 제거)."""
     return text.replace(":", "_").replace(" ", "_")
+
+
+async def _send_transition_gif(bot: Bot, chat_id: int, path: str) -> None:
+    """페이즈 전환 영상(mp4)을 GIF 애니메이션으로 전송. 파일 없으면 무시."""
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, "rb") as f:
+            await bot.send_animation(chat_id=chat_id, animation=f)
+    except Exception as e:
+        log.warning("전환 영상 전송 실패 chat_id=%s: %s", chat_id, e)
