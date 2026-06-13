@@ -77,6 +77,9 @@ class GameState:
     group_chat_id: int
     creator_id:    int
 
+    # 마피아 전용 토픽(포럼 스레드) ID. None이면 일반 그룹/General 토픽.
+    topic_id:   Optional[int] = None
+
     phase:      Phase = Phase.LOBBY
     day_number: int   = 0
 
@@ -104,6 +107,10 @@ class GameState:
     timers: dict = field(default_factory=lambda: {
         "lobby": 300, "night": 90, "discuss": 180, "vote": 60,
     })
+
+    def belongs_to_topic(self, message_thread_id: Optional[int]) -> bool:
+        """주어진 메시지의 스레드(토픽) ID가 이 게임의 토픽과 일치하는지."""
+        return (self.topic_id or None) == (message_thread_id or None)
 
     def alive_players(self) -> list:
         return [p for p in self.players.values() if p.is_alive]

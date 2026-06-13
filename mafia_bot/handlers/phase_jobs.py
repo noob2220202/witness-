@@ -129,7 +129,7 @@ async def advance_phase(
         # 기자 결과 공개
         for p in gs.players.values():
             if p.role_key == "reporter" and p.reporter_result and p.is_alive:
-                await _safe_send(bot, gid,
+                await _send_group(gs, bot,
                     reporter_announce_msg(p.display, p.reporter_result))
                 p.reporter_result = None
 
@@ -158,12 +158,12 @@ async def advance_phase(
                 role = ROLES.get(p.role_key)
                 dead_pairs.append((p.display, role.name if role else "???"))
 
-        await _send_transition_gif(bot, gid, DAY_GIF)
-        await _safe_send(bot, gid, day_announce_msg(gs, dead_pairs))
+        await _send_transition_gif(bot, gid, DAY_GIF, gs.topic_id)
+        await _send_group(gs, bot, day_announce_msg(gs, dead_pairs))
 
         # 이벤트 메시지 (마녀, 성직자 등)
         if events:
-            await _safe_send(bot, gid, "\n".join(events))
+            await _send_group(gs, bot, "\n".join(events))
 
         # 승리 판정 (밤 결산 후)
         win = check_win(gs)
@@ -177,7 +177,7 @@ async def advance_phase(
     # ── DAY_ANNOUNCE → DAY_DISCUSS ─────────────────────────────
     if gs.phase == Phase.DAY_ANNOUNCE:
         gs.phase = Phase.DAY_DISCUSS
-        await _safe_send(bot, gid, morning_status_msg(gs))
+        await _send_group(gs, bot, morning_status_msg(gs))
         await _send_judge_dm(bot, gs)
         schedule_phase(context, gid, gs.timers["discuss"], "discuss")
         return
@@ -188,7 +188,7 @@ async def advance_phase(
         alive_pairs = [(p.user_id, p.display) for p in gs.alive_players()]
         keyboard = _build_vote_keyboard(gs)
         msg = vote_start_msg(gs.day_number, gs.alive_count(), gs.timers["vote"])
-        sent = await _safe_send(bot, gid, msg, reply_markup=keyboard)
+        sent = await _send_group(gs, bot, msg, reply_markup=keyboard)
         if sent:
             gs.vote_msg_id = sent.message_id
         schedule_phase(context, gid, gs.timers["vote"], "vote")
@@ -209,7 +209,7 @@ async def advance_phase(
                 executed_p.is_alive = False
                 if executed_id not in gs.dead_players:
                     gs.dead_players.append(executed_id)
-                await _safe_send(bot, gid,
+                await _send_group(gs, bot,
                     vote_result_msg(executed_p.display, role_name))
                 await _end_game(bot, context, gs, WinCondition.JESTER)
                 return
@@ -225,7 +225,7 @@ async def advance_phase(
                 executed_p.shots_remaining = 0
                 executed_p.scientist_revival = True
 
-            await _safe_send(bot, gid,
+            await _send_group(gs, bot,
                 vote_result_msg(executed_p.display, role_name))
             await _safe_dm(bot, executed_id, player_dead_dm(role_name))
 
@@ -237,12 +237,12 @@ async def advance_phase(
                     if partner.user_id not in gs.dead_players:
                         gs.dead_players.append(partner.user_id)
                     partner_role = ROLES.get(partner.role_key)
-                    await _safe_send(bot, gid,
+                    await _send_group(gs, bot,
                         f"💔 *{esc(partner.display)}* 도 연인을 잃고 함께 사망했습니다\\.\n"
                         f"직업: __{esc(partner_role.name if partner_role else '???')}__")
                     await _safe_dm(bot, partner.user_id, lover_dead_dm(executed_p.display))
         else:
-            await _safe_send(bot, gid,
+            await _send_group(gs, bot,
                 vote_result_msg(None, None))
 
         # 승리 판정
@@ -277,13 +277,13 @@ async def _start_night(
             p.scientist_revival = False
             if uid in gs.dead_players:
                 gs.dead_players.remove(uid)
-            await _safe_send(bot, gid,
+            await _send_group(gs, bot,
                 f"🧪 *과학자 부활\\!* *{esc(p.display)}* 이\\(가\\) 기적적으로 되살아났습니다\\!")
             await _safe_dm(bot, uid,
                 "🧪 당신은 *과학자의 기술*로 __부활__했습니다\\! 게임에 복귀합니다\\.")
 
-    await _send_transition_gif(bot, gid, NIGHT_GIF)
-    await _safe_send(bot, gid,
+    await _send_transition_gif(bot, gid, NIGHT_GIF, gs.topic_id)
+    await _send_group(gs, bot,
         night_start_msg(gs.day_number, gs.alive_count()))
 
     await send_role_dms(bot, gs)
@@ -500,7 +500,7 @@ async def _end_game(
     """게임 종료: 승리 공지 + 상태 정리."""
     cancel_phase_job(context, gs)
     gs.phase = Phase.ENDED
-    await _safe_send(bot, gs.group_chat_id, win_announce_msg(win_cond, gs))
+    await _send_group(gs, bot, win_announce_msg(win_cond, gs))
 
     games: dict = context.bot_data.get("games", {})
     games.pop(gs.group_chat_id, None)
@@ -525,7 +525,11 @@ def all_votes_submitted(gs: GameState) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def _safe_send(bot: Bot, chat_id: int, text: str, **kwargs):
-    """그룹/개인 메시지 전송. 실패해도 게임 진행."""
+    """그룹/개인 메시지 전송. 실패해도 게임 진행.
+
+    ``message_thread_id`` 를 kwargs 로 넘기면 해당 토픽(포럼 스레드)으로 전송한다.
+    값이 None 이면 일반 그룹/General 토픽으로 전송된다.
+    """
     try:
         return await bot.send_message(
             chat_id=chat_id,
@@ -536,6 +540,15 @@ async def _safe_send(bot: Bot, chat_id: int, text: str, **kwargs):
     except Exception as e:
         log.warning("메시지 전송 실패 chat_id=%s: %s", chat_id, e)
         return None
+
+
+async def _send_group(gs: GameState, bot: Bot, text: str, **kwargs):
+    """게임이 묶여 있는 그룹(+토픽)으로 메시지 전송."""
+    return await _safe_send(
+        bot, gs.group_chat_id, text,
+        message_thread_id=gs.topic_id,
+        **kwargs,
+    )
 
 
 async def _safe_dm(bot: Bot, user_id: int, text: str, **kwargs):
@@ -557,12 +570,18 @@ def esc_cb(text: str) -> str:
     return text.replace(":", "_").replace(" ", "_")
 
 
-async def _send_transition_gif(bot: Bot, chat_id: int, path: str) -> None:
+async def _send_transition_gif(
+    bot: Bot, chat_id: int, path: str, message_thread_id=None
+) -> None:
     """페이즈 전환 영상(mp4)을 GIF 애니메이션으로 전송. 파일 없으면 무시."""
     if not os.path.exists(path):
         return
     try:
         with open(path, "rb") as f:
-            await bot.send_animation(chat_id=chat_id, animation=f)
+            await bot.send_animation(
+                chat_id=chat_id,
+                animation=f,
+                message_thread_id=message_thread_id,
+            )
     except Exception as e:
         log.warning("전환 영상 전송 실패 chat_id=%s: %s", chat_id, e)

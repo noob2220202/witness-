@@ -1086,10 +1086,54 @@ def test_cult_win_equal_vote():
 
 
 # ═════════════════════════════════════════════════════════════
+# 마피아 전용 토픽 스코핑
+# ═════════════════════════════════════════════════════════════
+
+def test_topic_binding_default_none():
+    gs = GameState(group_chat_id=-100, creator_id=1)
+    if gs.topic_id is None:
+        ok("topic_default_none")
+    else:
+        fail("topic_default_none", f"topic_id={gs.topic_id}")
+
+
+def test_topic_binding_set():
+    gs = GameState(group_chat_id=-100, creator_id=1, topic_id=42)
+    if gs.topic_id == 42:
+        ok("topic_binding_set")
+    else:
+        fail("topic_binding_set", f"topic_id={gs.topic_id}")
+
+
+def test_belongs_to_topic_match_and_mismatch():
+    gs = GameState(group_chat_id=-100, creator_id=1, topic_id=42)
+    # 같은 토픽 메시지만 True, 다른 토픽/General(None)은 False
+    if (gs.belongs_to_topic(42)
+            and not gs.belongs_to_topic(99)
+            and not gs.belongs_to_topic(None)):
+        ok("belongs_to_topic_scoping")
+    else:
+        fail("belongs_to_topic_scoping", "scoping logic wrong")
+
+
+def test_belongs_to_topic_general_game():
+    # 토픽 미지정 게임(일반 그룹/General)은 thread 없는 메시지와 일치
+    gs = GameState(group_chat_id=-100, creator_id=1)
+    if gs.belongs_to_topic(None) and not gs.belongs_to_topic(7):
+        ok("belongs_to_topic_general")
+    else:
+        fail("belongs_to_topic_general", "general scoping wrong")
+
+
+# ═════════════════════════════════════════════════════════════
 # RUN ALL TESTS
 # ═════════════════════════════════════════════════════════════
 
 def run_all():
+    test_topic_binding_default_none()
+    test_topic_binding_set()
+    test_belongs_to_topic_match_and_mismatch()
+    test_belongs_to_topic_general_game()
     test_mafioso_kill()
     test_godfather_appears_citizen()
     test_mafioso_appears_mafia()

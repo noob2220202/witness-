@@ -46,7 +46,11 @@ async def startgame_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
-    gs = GameState(group_chat_id=group_id, creator_id=user.id)
+    # 명령이 입력된 토픽(포럼 스레드)에 게임을 묶는다.
+    # General 토픽/일반 그룹이면 None.
+    topic_id = update.message.message_thread_id if update.message.is_topic_message else None
+
+    gs = GameState(group_chat_id=group_id, creator_id=user.id, topic_id=topic_id)
     games[group_id] = gs
 
     keyboard = _build_lobby_keyboard(group_id)
@@ -219,7 +223,8 @@ async def begin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     # 그룹에 밤 시작 알림
     await _safe_send(
         context.bot, group_id,
-        night_start_msg(gs.day_number, gs.alive_count())
+        night_start_msg(gs.day_number, gs.alive_count()),
+        message_thread_id=gs.topic_id,
     )
 
     # 밤 행동 버튼 DM 전송
@@ -366,6 +371,13 @@ async def chat_guard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # 게임 없거나 로비/종료 중에는 삭제 안 함
     if gs is None or gs.phase in (Phase.LOBBY, Phase.ENDED):
         return
+
+    # 마피아 전용 토픽에 묶인 게임이면, 그 토픽의 메시지만 감시·삭제한다.
+    # 다른 토픽(잡담방 등)의 메시지는 절대 건드리지 않는다.
+    if gs.topic_id is not None:
+        msg_topic = msg.message_thread_id if msg.is_topic_message else None
+        if msg_topic != gs.topic_id:
+            return
 
     player = gs.players.get(user.id)
 

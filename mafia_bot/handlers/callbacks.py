@@ -445,7 +445,8 @@ async def handle_judge(
             context.bot, group_id,
             f"⚖️ *판사의 직권 처형\\!*\n\n"
             f"*{esc(judge.display)}* 이\\(가\\) 정체를 공개하고 직권 처형을 선언했습니다\\.\n\n"
-            f"💀 *{esc(target.display)}* — 직업: __{esc(role_name)}__"
+            f"💀 *{esc(target.display)}* — 직업: __{esc(role_name)}__",
+            message_thread_id=gs.topic_id,
         )
         await _safe_dm(context.bot, target_id,
             f"⚖️ 판사의 직권 처형으로 사망했습니다\\.\n직업: __{esc(role_name)}__")
@@ -456,7 +457,8 @@ async def handle_judge(
             context.bot, group_id,
             f"⚖️ *판사의 무죄 선언\\!*\n\n"
             f"*{esc(judge.display)}* 이\\(가\\) 정체를 공개하고 무죄를 선언했습니다\\.\n\n"
-            f"🛡️ *{esc(target.display)}* 은\\(는\\) 이번 낮 투표 처형에서 면제됩니다\\."
+            f"🛡️ *{esc(target.display)}* 은\\(는\\) 이번 낮 투표 처형에서 면제됩니다\\.",
+            message_thread_id=gs.topic_id,
         )
         await query.answer("✅ 무죄 선언 완료.")
 
