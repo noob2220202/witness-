@@ -115,6 +115,7 @@ async def advance_phase(
     """페이즈를 다음 단계로 전진."""
     bot: Bot = context.bot
     gid = gs.group_chat_id
+    log.info("advance_phase: group=%s phase=%s day=%s", gid, gs.phase.value, gs.day_number)
 
     # ── LOBBY → NIGHT ──────────────────────────────────────────
     if gs.phase == Phase.LOBBY:
@@ -550,8 +551,30 @@ async def _safe_send(bot: Bot, chat_id: int, text: str, **kwargs):
             **kwargs,
         )
     except Exception as e:
-        log.warning("메시지 전송 실패 chat_id=%s: %s", chat_id, e)
-        return None
+        # MarkdownV2 파싱 오류 등으로 실패하면 메시지가 조용히 사라진다.
+        # (예: 아침 직업 리스트가 안 뜨는 증상) → 일반 텍스트로 재시도.
+        log.warning("MarkdownV2 전송 실패 chat_id=%s: %s — 일반 텍스트로 재시도", chat_id, e)
+        try:
+            return await bot.send_message(
+                chat_id=chat_id,
+                text=_strip_md(text),
+                **kwargs,
+            )
+        except Exception as e2:
+            log.warning("일반 텍스트 전송도 실패 chat_id=%s: %s", chat_id, e2)
+            return None
+
+
+def _strip_md(text: str) -> str:
+    """MarkdownV2 전송 실패 시 사용할 일반 텍스트로 변환.
+    이스케이프 백슬래시(\\x)를 풀고, 강조 기호(*, _, ~, `, |)를 제거한다."""
+    import re
+    # \x → x (이스케이프된 특수문자 복원)
+    out = re.sub(r'\\([_*\[\]()~`>#+\-=|{}.!\\])', r'\1', text)
+    # 남은 강조 기호 제거
+    out = out.replace("*", "").replace("`", "").replace("|", "")
+    out = out.replace("__", "").replace("~", "")
+    return out
 
 
 async def _send_group(gs: GameState, bot: Bot, text: str, **kwargs):
