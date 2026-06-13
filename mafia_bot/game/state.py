@@ -10,6 +10,8 @@ class Phase(Enum):
     DAY_ANNOUNCE  = "day_announce"
     DAY_DISCUSS   = "day_discuss"
     VOTE          = "vote"
+    FINAL_DEFENSE = "final_defense"   # 최종변론 (15초)
+    JUDGMENT      = "judgment"        # 찬반(업다운) 투표 (15초)
     VOTE_RESOLVE  = "vote_resolve"
     ENDED         = "ended"
 
@@ -90,6 +92,10 @@ class GameState:
     mafia_kill_submitted_by: Optional[int] = None
 
     votes: dict = field(default_factory=dict)
+
+    # 최종변론·찬반(업다운) 투표
+    accused_id:     Optional[int] = None        # 지목된 피고인
+    judgment_votes: dict = field(default_factory=dict)  # {voter_id: True(찬성/처형) | False(반대/생존)}
 
     lobby_msg_id:      Optional[int] = None
     vote_msg_id:       Optional[int] = None

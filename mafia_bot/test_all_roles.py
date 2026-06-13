@@ -1086,6 +1086,75 @@ def test_cult_win_equal_vote():
 
 
 # ═════════════════════════════════════════════════════════════
+# 최종변론 + 찬반(업다운) 투표
+# ═════════════════════════════════════════════════════════════
+
+def _trial_game():
+    gs = GameState(group_chat_id=-1, creator_id=1)
+    for rk in ["mafioso", "police", "doctor", "soldier"]:
+        p = new_player(rk)
+        gs.players[p.user_id] = p
+    return gs, list(gs.players.keys())
+
+
+def test_nominee_top_voted():
+    from game.vote_engine import get_nominee
+    gs, ids = _trial_game()
+    gs.votes = {ids[0]: ids[1], ids[2]: ids[1], ids[3]: ids[1]}
+    if get_nominee(gs) == ids[1]:
+        ok("nominee_top_voted")
+    else:
+        fail("nominee_top_voted", "최다 득표자 지목 실패")
+
+
+def test_nominee_tie_none():
+    from game.vote_engine import get_nominee
+    gs, ids = _trial_game()
+    gs.votes = {ids[0]: ids[1], ids[2]: ids[3]}  # 1:1 동점
+    if get_nominee(gs) is None:
+        ok("nominee_tie_none")
+    else:
+        fail("nominee_tie_none", "동점인데 지목됨")
+
+
+def test_judgment_approve_executes():
+    from game.vote_engine import tally_judgment, count_judgment
+    gs, ids = _trial_game()
+    gs.accused_id = ids[1]
+    gs.judgment_votes = {ids[0]: True, ids[2]: True, ids[3]: False}
+    a, r = count_judgment(gs)
+    if tally_judgment(gs) and (a, r) == (2, 1):
+        ok("judgment_approve_executes")
+    else:
+        fail("judgment_approve_executes", f"approve={a} reject={r} execute={tally_judgment(gs)}")
+
+
+def test_judgment_tie_survives():
+    from game.vote_engine import tally_judgment
+    gs, ids = _trial_game()
+    gs.accused_id = ids[1]
+    gs.judgment_votes = {ids[0]: True, ids[2]: False}  # 1:1 → 생존
+    if not tally_judgment(gs):
+        ok("judgment_tie_survives")
+    else:
+        fail("judgment_tie_survives", "동점인데 처형됨")
+
+
+def test_resolve_execution_politician_immune():
+    from game.vote_engine import resolve_execution
+    gs = GameState(group_chat_id=-1, creator_id=1)
+    pol = new_player("politician")
+    gs.players[pol.user_id] = pol
+    # 첫 처형 시도 → 면책(None), 면책 소진
+    first = resolve_execution(gs, pol.user_id)
+    second = resolve_execution(gs, pol.user_id)
+    if first is None and second == pol.user_id:
+        ok("resolve_execution_politician_immune")
+    else:
+        fail("resolve_execution_politician_immune", f"first={first} second={second}")
+
+
+# ═════════════════════════════════════════════════════════════
 # 마피아 전용 토픽 스코핑
 # ═════════════════════════════════════════════════════════════
 
@@ -1130,6 +1199,11 @@ def test_belongs_to_topic_general_game():
 # ═════════════════════════════════════════════════════════════
 
 def run_all():
+    test_nominee_top_voted()
+    test_nominee_tie_none()
+    test_judgment_approve_executes()
+    test_judgment_tie_survives()
+    test_resolve_execution_politician_immune()
     test_topic_binding_default_none()
     test_topic_binding_set()
     test_belongs_to_topic_match_and_mismatch()

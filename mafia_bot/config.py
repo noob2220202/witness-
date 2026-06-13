@@ -15,6 +15,8 @@ NIGHT_TIMEOUT: int = 90         # 밤 행동 90초
 RESULT_DELAY: int = 8           # 결과 공지 후 딜레이
 DAY_DISCUSS_TIMEOUT: int = 180  # 낮 토론 3분
 VOTE_TIMEOUT: int = 60          # 투표 1분
+FINAL_DEFENSE_TIMEOUT: int = 15  # 최종변론 (고정 15초)
+JUDGMENT_TIMEOUT: int = 15       # 찬반(업다운) 투표 (고정 15초)
 
 # 의사 자힐 횟수
 DOCTOR_SELF_HEAL_SHOTS: int = 1

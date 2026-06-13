@@ -17,13 +17,17 @@ DAY_GIF   = os.path.join(_BASE_DIR, "data", "day_transition.mp4")    # 밤→아
 from game.state import GameState, Phase, Faction, WinCondition
 from game.roles import ROLES
 from game.night_engine import resolve_night, reset_night_state
-from game.vote_engine import tally_votes, get_vote_summary
+from game.vote_engine import (
+    get_nominee, resolve_execution, tally_judgment, count_judgment,
+    get_vote_summary,
+)
 from game.win_checker import check_win, check_jester_win
 from messages.templates import (
     esc,
     night_start_msg, night_action_prompt, no_night_action_msg,
     day_announce_msg, day_discuss_msg, morning_status_msg,
     vote_start_msg, vote_result_msg,
+    final_defense_msg, judgment_start_msg, judgment_progress_msg, judgment_result_msg,
     politician_immune_msg, magician_swap_msg,
     win_announce_msg, investigate_result_dm,
     mafia_team_msg, mafia_kill_submitted_msg,
@@ -92,11 +96,13 @@ async def _phase_timeout_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # 타이머가 예약된 페이즈와 현재 페이즈가 다르면 이미 조기 진행된 것
     expected = {
-        "lobby":   Phase.LOBBY,
-        "night":   Phase.NIGHT,
-        "discuss": Phase.DAY_DISCUSS,
-        "vote":    Phase.VOTE,
-        "result":  Phase.DAY_ANNOUNCE,
+        "lobby":    Phase.LOBBY,
+        "night":    Phase.NIGHT,
+        "discuss":  Phase.DAY_DISCUSS,
+        "vote":     Phase.VOTE,
+        "defense":  Phase.FINAL_DEFENSE,
+        "judgment": Phase.JUDGMENT,
+        "result":   Phase.DAY_ANNOUNCE,
     }
     if tag in expected and gs.phase != expected[tag]:
         return
@@ -204,66 +210,79 @@ async def advance_phase(
         schedule_phase(context, gid, gs.timers["vote"], "vote")
         return
 
-    # ── VOTE → VOTE_RESOLVE → 다음 밤 or 종료 ──────────────────
+    # ── VOTE → FINAL_DEFENSE (지목) or 다음 밤 (지목 무산) ──────
     if gs.phase == Phase.VOTE:
-        gs.phase = Phase.VOTE_RESOLVE
-        executed_id = tally_votes(gs)
-
-        if executed_id is not None:
-            executed_p = gs.players.get(executed_id)
-            role = ROLES.get(executed_p.role_key) if executed_p else None
-            role_name = role.name if role else "???"
-
-            # 어릿광대 처형 승리 체크
-            if check_jester_win(gs, executed_id):
-                executed_p.is_alive = False
-                if executed_id not in gs.dead_players:
-                    gs.dead_players.append(executed_id)
-                await _send_group(gs, bot,
-                    vote_result_msg(executed_p.display, role_name))
-                await _end_game(bot, context, gs, WinCondition.JESTER)
-                return
-
-            # tally_votes가 이미 swap 처리. executed_id가 swap된 결과일 수 있음
-            executed_p.is_alive = False
-            if executed_id not in gs.dead_players:
-                gs.dead_players.append(executed_id)
-            gs.last_vote_dead = executed_id
-
-            # 과학자 부활 예약 (투표 처형 시)
-            if executed_p.role_key == "scientist" and executed_p.shots_remaining == 1:
-                executed_p.shots_remaining = 0
-                executed_p.scientist_revival = True
-
-            await _send_group(gs, bot,
-                vote_result_msg(executed_p.display, role_name))
-            await _safe_dm(bot, executed_id, player_dead_dm(role_name))
-
-            # 연인 동반 사망
-            if executed_p.lover_id:
-                partner = gs.players.get(executed_p.lover_id)
-                if partner and partner.is_alive:
-                    partner.is_alive = False
-                    if partner.user_id not in gs.dead_players:
-                        gs.dead_players.append(partner.user_id)
-                    partner_role = ROLES.get(partner.role_key)
-                    await _send_group(gs, bot,
-                        f"💔 *{esc(partner.display)}* 도 연인을 잃고 함께 사망했습니다\\.\n"
-                        f"직업: __{esc(partner_role.name if partner_role else '???')}__")
-                    await _safe_dm(bot, partner.user_id, lover_dead_dm(executed_p.display))
-        else:
-            await _send_group(gs, bot,
-                vote_result_msg(None, None))
-
-        # 승리 판정
-        win = check_win(gs)
-        if win != WinCondition.NONE:
-            await _end_game(bot, context, gs, win)
+        nominee_id = get_nominee(gs)
+        if nominee_id is None:
+            # 동점·기권 등으로 지목 무산 → 밤으로
+            gs.phase = Phase.VOTE_RESOLVE
+            await _send_group(gs, bot, vote_result_msg(None, None))
+            await _to_next_night_or_end(bot, context, gs)
             return
 
-        # 다음 밤으로
-        reset_night_state(gs)
-        await _start_night(bot, context, gs)
+        gs.accused_id = nominee_id
+        gs.phase = Phase.FINAL_DEFENSE
+        accused = gs.players.get(nominee_id)
+        accused_name = accused.display if accused else "???"
+        await _send_group(gs, bot,
+            final_defense_msg(accused_name, config.FINAL_DEFENSE_TIMEOUT))
+        schedule_phase(context, gid, config.FINAL_DEFENSE_TIMEOUT, "defense")
+        return
+
+    # ── FINAL_DEFENSE → JUDGMENT (찬반 투표) ───────────────────
+    if gs.phase == Phase.FINAL_DEFENSE:
+        accused = gs.players.get(gs.accused_id)
+        if accused is None or not accused.is_alive:
+            # 피고인이 사라진 예외 상황 → 밤으로
+            gs.phase = Phase.VOTE_RESOLVE
+            await _to_next_night_or_end(bot, context, gs)
+            return
+        gs.phase = Phase.JUDGMENT
+        gs.judgment_votes = {}
+        keyboard = _build_judgment_keyboard(gs)
+        sent = await _send_group(gs, bot,
+            judgment_start_msg(accused.display, config.JUDGMENT_TIMEOUT),
+            reply_markup=keyboard)
+        if sent:
+            gs.vote_msg_id = sent.message_id
+        schedule_phase(context, gid, config.JUDGMENT_TIMEOUT, "judgment")
+        return
+
+    # ── JUDGMENT → VOTE_RESOLVE → 다음 밤 or 종료 ──────────────
+    if gs.phase == Phase.JUDGMENT:
+        gs.phase = Phase.VOTE_RESOLVE
+        accused_id = gs.accused_id
+        gs.accused_id = None
+        accused_p = gs.players.get(accused_id)
+        accused_name = accused_p.display if accused_p else "???"
+        approve, reject = count_judgment(gs)
+        execute = tally_judgment(gs)
+
+        if not execute:
+            # 처형 부결 → 생존
+            await _send_group(gs, bot,
+                judgment_result_msg(accused_name, False, approve, reject))
+            await _to_next_night_or_end(bot, context, gs)
+            return
+
+        # 처형 가결 → 보호(정치인·판사무죄·마술사) 적용
+        actual_id = resolve_execution(gs, accused_id)
+        if actual_id is None:
+            await _send_group(gs, bot,
+                judgment_result_msg(accused_name, True, approve, reject))
+            if accused_p and accused_p.role_key == "politician":
+                await _send_group(gs, bot, politician_immune_msg(accused_name))
+            else:
+                await _send_group(gs, bot,
+                    f"🛡️ *{esc(accused_name)}* 은\\(는\\) 보호 효과로 처형을 면했습니다\\.")
+            await _to_next_night_or_end(bot, context, gs)
+            return
+
+        await _send_group(gs, bot,
+            judgment_result_msg(accused_name, True, approve, reject))
+        if actual_id != accused_id:
+            await _send_group(gs, bot, magician_swap_msg())
+        await _execute_player(bot, context, gs, actual_id)
         return
 
 
@@ -502,6 +521,82 @@ def _build_vote_keyboard(gs: GameState) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
+def _build_judgment_keyboard(gs: GameState) -> InlineKeyboardMarkup:
+    """찬반(업다운) 투표 키보드. 👍 찬성(처형) / 👎 반대(생존)."""
+    gid = gs.group_chat_id
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("👍 찬성 (처형)", callback_data=f"trial:{gid}:up"),
+        InlineKeyboardButton("👎 반대 (생존)", callback_data=f"trial:{gid}:down"),
+    ]])
+
+
+async def _to_next_night_or_end(
+    bot: Bot,
+    context: ContextTypes.DEFAULT_TYPE,
+    gs: GameState,
+) -> None:
+    """낮 결산 후 승리 판정 → 게임 종료 또는 다음 밤으로."""
+    win = check_win(gs)
+    if win != WinCondition.NONE:
+        await _end_game(bot, context, gs, win)
+        return
+    reset_night_state(gs)
+    await _start_night(bot, context, gs)
+
+
+async def _execute_player(
+    bot: Bot,
+    context: ContextTypes.DEFAULT_TYPE,
+    gs: GameState,
+    executed_id: int,
+) -> None:
+    """투표 처형 확정 대상 처리: 어릿광대 승리·과학자 부활·연인 동반사망 포함."""
+    executed_p = gs.players.get(executed_id)
+    if executed_p is None:
+        await _to_next_night_or_end(bot, context, gs)
+        return
+
+    role = ROLES.get(executed_p.role_key)
+    role_name = role.name if role else "???"
+
+    # 어릿광대 처형 승리 체크
+    if check_jester_win(gs, executed_id):
+        executed_p.is_alive = False
+        if executed_id not in gs.dead_players:
+            gs.dead_players.append(executed_id)
+        await _send_group(gs, bot, vote_result_msg(executed_p.display, role_name))
+        await _end_game(bot, context, gs, WinCondition.JESTER)
+        return
+
+    executed_p.is_alive = False
+    if executed_id not in gs.dead_players:
+        gs.dead_players.append(executed_id)
+    gs.last_vote_dead = executed_id
+
+    # 과학자 부활 예약 (투표 처형 시)
+    if executed_p.role_key == "scientist" and executed_p.shots_remaining == 1:
+        executed_p.shots_remaining = 0
+        executed_p.scientist_revival = True
+
+    await _send_group(gs, bot, vote_result_msg(executed_p.display, role_name))
+    await _safe_dm(bot, executed_id, player_dead_dm(role_name))
+
+    # 연인 동반 사망
+    if executed_p.lover_id:
+        partner = gs.players.get(executed_p.lover_id)
+        if partner and partner.is_alive:
+            partner.is_alive = False
+            if partner.user_id not in gs.dead_players:
+                gs.dead_players.append(partner.user_id)
+            partner_role = ROLES.get(partner.role_key)
+            await _send_group(gs, bot,
+                f"💔 *{esc(partner.display)}* 도 연인을 잃고 함께 사망했습니다\\.\n"
+                f"직업: __{esc(partner_role.name if partner_role else '???')}__")
+            await _safe_dm(bot, partner.user_id, lover_dead_dm(executed_p.display))
+
+    await _to_next_night_or_end(bot, context, gs)
+
+
 async def _end_game(
     bot: Bot,
     context: ContextTypes.DEFAULT_TYPE,
@@ -529,6 +624,22 @@ def all_night_actions_submitted(gs: GameState) -> bool:
 def all_votes_submitted(gs: GameState) -> bool:
     """살아있는 전원이 투표했는지 확인."""
     return all(p.has_voted for p in gs.alive_players())
+
+
+def judgment_eligible_ids(gs: GameState) -> list[int]:
+    """찬반 투표 가능한 유권자 목록 (피고인·개구리·투표권 0 제외)."""
+    return [
+        p.user_id for p in gs.alive_players()
+        if p.user_id != gs.accused_id and not p.is_frogged and p.vote_weight > 0
+    ]
+
+
+def all_judgment_voted(gs: GameState) -> bool:
+    """찬반 투표 가능한 전원이 투표했는지 확인."""
+    eligible = judgment_eligible_ids(gs)
+    if not eligible:
+        return True
+    return all(uid in gs.judgment_votes for uid in eligible)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

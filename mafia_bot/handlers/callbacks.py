@@ -17,16 +17,16 @@ from game.state import Phase, Faction, WinCondition, PlayerState
 from game.roles import ROLES
 from handlers.phase_jobs import (
     advance_phase, cancel_phase_job,
-    all_night_actions_submitted, all_votes_submitted,
+    all_night_actions_submitted, all_votes_submitted, all_judgment_voted,
     _safe_dm, _safe_send,
-    _build_vote_keyboard,
+    _build_vote_keyboard, _build_judgment_keyboard,
     _build_night_target2_keyboard,
 )
 from messages.templates import (
     esc, lobby_msg,
-    mafia_kill_submitted_msg,
+    mafia_kill_submitted_msg, judgment_progress_msg,
 )
-from game.vote_engine import get_vote_summary
+from game.vote_engine import get_vote_summary, count_judgment
 import config
 
 log = logging.getLogger(__name__)
@@ -59,6 +59,9 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         elif action == "vote" and len(parts) >= 3:
             await handle_vote(query, context, int(parts[1]), int(parts[2]))
+
+        elif action == "trial" and len(parts) >= 3:
+            await handle_trial_vote(query, context, int(parts[1]), parts[2])
 
         elif action == "judge" and len(parts) >= 4:
             await handle_judge(query, context, int(parts[1]), parts[2], int(parts[3]))
@@ -383,6 +386,65 @@ async def handle_vote(
 
     # 전원 투표 시 조기 진행
     if all_votes_submitted(gs):
+        cancel_phase_job(context, gs)
+        await advance_phase(context, gs)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 찬반(업다운) 투표 — 최종변론 후 처형 여부 결정
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def handle_trial_vote(
+    query, context: ContextTypes.DEFAULT_TYPE,
+    group_id: int, vote_str: str,
+) -> None:
+    voter_id = query.from_user.id
+    gs = context.bot_data.get("games", {}).get(group_id)
+
+    if gs is None or gs.phase != Phase.JUDGMENT:
+        await query.answer("❌ 찬반 투표 단계가 아닙니다.", show_alert=True)
+        return
+
+    voter = gs.players.get(voter_id)
+    if not voter or not voter.is_alive:
+        await query.answer("❌ 투표 자격이 없습니다.", show_alert=True)
+        return
+    if voter_id == gs.accused_id:
+        await query.answer("❌ 피고인은 찬반 투표에 참여할 수 없습니다.", show_alert=True)
+        return
+    if voter.is_frogged or voter.vote_weight <= 0:
+        await query.answer("❌ 투표권이 없는 상태입니다.", show_alert=True)
+        return
+    if voter_id in gs.judgment_votes:
+        await query.answer("ℹ️ 이미 투표했습니다.", show_alert=True)
+        return
+
+    approve_vote = (vote_str == "up")
+    gs.judgment_votes[voter_id] = approve_vote
+    await query.answer("👍 찬성 (처형)" if approve_vote else "👎 반대 (생존)")
+
+    # 진행 현황 갱신
+    accused = gs.players.get(gs.accused_id)
+    accused_name = accused.display if accused else "???"
+    approve, reject = count_judgment(gs)
+    total = len([
+        p for p in gs.alive_players()
+        if p.user_id != gs.accused_id and not p.is_frogged and p.vote_weight > 0
+    ])
+    voted = len(gs.judgment_votes)
+    try:
+        await context.bot.edit_message_text(
+            chat_id=group_id,
+            message_id=gs.vote_msg_id,
+            text=judgment_progress_msg(accused_name, approve, reject, voted, total),
+            reply_markup=_build_judgment_keyboard(gs),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    except Exception:
+        pass
+
+    # 전원 투표 시 조기 진행
+    if all_judgment_voted(gs):
         cancel_phase_job(context, gs)
         await advance_phase(context, gs)
 

@@ -41,6 +41,8 @@ def status_msg(gs: GameState) -> str:
         "day_announce": "🔔 사망자 공지",
         "day_discuss":  "☀️ 낮 토론",
         "vote":         "🗳️ 투표",
+        "final_defense":"🎤 최종변론",
+        "judgment":     "⚖️ 찬반 투표",
         "vote_resolve": "⚖️ 투표 결산",
         "ended":        "🏁 게임 종료",
     }
@@ -266,6 +268,44 @@ def vote_start_msg(day: int, alive_cnt: int, timeout: int) -> str:
         f"생존자 {esc(str(alive_cnt))}명 중 처형할 플레이어를 선택하세요\\.\n"
         f"제한 시간: *{esc(str(timeout))}초*\n\n"
         "> 기권하려면 '기권' 버튼을 누르세요\\."
+    )
+
+
+def final_defense_msg(accused_name: str, seconds: int) -> str:
+    return (
+        f"🎤 *최종변론*\n\n"
+        f"투표 결과 *{esc(accused_name)}* 님이 지목되었습니다\\.\n"
+        f"제한 시간 *{esc(str(seconds))}초* 동안 최후 변론을 하세요\\.\n\n"
+        "> 변론이 끝나면 찬반\\(처형/생존\\) 투표가 진행됩니다\\."
+    )
+
+
+def judgment_start_msg(accused_name: str, seconds: int) -> str:
+    return (
+        f"⚖️ *찬반 투표\\!*\n\n"
+        f"*{esc(accused_name)}* 님을 처형할까요\\?\n"
+        f"제한 시간: *{esc(str(seconds))}초*\n\n"
+        "👍 *찬성* \\= 처형  \\|  👎 *반대* \\= 생존\n"
+        "> 찬성이 더 많으면 처형됩니다\\. \\(피고인은 투표 불가\\)"
+    )
+
+
+def judgment_progress_msg(accused_name: str, approve: int, reject: int, voted: int, total: int) -> str:
+    return (
+        f"⚖️ *찬반 투표 진행 중\\.\\.\\.*\n\n"
+        f"피고인: *{esc(accused_name)}*\n"
+        f"👍 찬성 *{esc(str(approve))}*  \\|  👎 반대 *{esc(str(reject))}*\n\n"
+        f"*{esc(str(voted))}/{esc(str(total))}명* 투표 완료"
+    )
+
+
+def judgment_result_msg(accused_name: str, executed: bool, approve: int, reject: int) -> str:
+    verdict = "💀 *처형 가결*" if executed else "🕊️ *생존 \\(처형 부결\\)*"
+    return (
+        f"⚖️ *찬반 투표 결과*\n\n"
+        f"피고인: *{esc(accused_name)}*\n"
+        f"👍 찬성 *{esc(str(approve))}*  \\|  👎 반대 *{esc(str(reject))}*\n\n"
+        f"{verdict}"
     )
 
 

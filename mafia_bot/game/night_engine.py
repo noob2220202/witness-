@@ -335,6 +335,8 @@ def reset_night_state(gs: GameState):
     gs.night_actions.clear()
     gs.mafia_kill_submitted_by = None
     gs.votes.clear()
+    gs.judgment_votes.clear()
+    gs.accused_id = None
     gs.investigate_results.clear()
     gs.last_night_dead.clear()
     gs.last_vote_dead = None
