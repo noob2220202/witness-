@@ -15,7 +15,7 @@ from handlers.phase_jobs import (
     schedule_phase, cancel_phase_job, send_role_dms, send_night_action_dms,
     _safe_send, advance_phase,
 )
-from handlers.setting_cmd import setting_handler, get_settings
+from handlers.setting_cmd import setting_handler, get_settings, _check_permission
 from messages.templates import (
     esc,
     lobby_msg, status_msg,
@@ -46,9 +46,14 @@ async def startgame_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
-    # 명령이 입력된 토픽(포럼 스레드)에 게임을 묶는다.
-    # General 토픽/일반 그룹이면 None.
-    topic_id = update.message.message_thread_id if update.message.is_topic_message else None
+    # 게임을 묶을 토픽(포럼 스레드) 결정.
+    # 1) /마피아토픽설정 으로 저장한 토픽이 있으면 그것을 우선 사용
+    # 2) 없으면 /startgame 을 입력한 현재 토픽 (General/일반 그룹이면 None)
+    settings = get_settings(context.bot_data, group_id)
+    if "topic_id" in settings:
+        topic_id = settings["topic_id"]
+    else:
+        topic_id = update.message.message_thread_id if update.message.is_topic_message else None
 
     gs = GameState(group_chat_id=group_id, creator_id=user.id, topic_id=topic_id)
     games[group_id] = gs
@@ -343,6 +348,64 @@ async def migrate_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         gs.group_chat_id = new_id
         games[new_id] = gs
         log.info("그룹 마이그레이션: %s → %s", old_id, new_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /마피아토픽설정 — 게임을 진행할 전용 토픽 지정
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def topic_set_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    현재 명령을 입력한 토픽을 '마피아 전용 토픽'으로 등록한다.
+    - 모든 게임 메시지가 이 토픽으로 전송됨
+    - 이 토픽의 사망자·미참여자 메시지만 자동 삭제됨
+    그룹 관리자(또는 게임 진행자)만 사용 가능.
+    """
+    msg = update.effective_message
+    if not msg:
+        return
+
+    group_id = update.effective_chat.id
+    user = update.effective_user
+
+    if not await _check_permission(context, group_id, user.id):
+        await msg.reply_text(
+            "❌ 그룹 관리자만 토픽을 설정할 수 있습니다\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    topic_id = msg.message_thread_id if msg.is_topic_message else None
+
+    # 설정에 저장 (다음 /startgame 부터 적용)
+    settings = get_settings(context.bot_data, group_id)
+    settings["topic_id"] = topic_id
+
+    # 진행 중인 게임에도 즉시 반영
+    games: dict = context.bot_data.get("games", {})
+    gs = games.get(group_id)
+    if gs is not None:
+        gs.topic_id = topic_id
+
+    if topic_id is not None:
+        await msg.reply_text(
+            "✅ *마피아 전용 토픽이 이 토픽으로 설정되었습니다\\!*\n\n"
+            "• 모든 게임 메시지가 이 토픽으로 전송됩니다\\.\n"
+            "• 이 토픽의 사망자·미참여자 메시지만 자동 삭제됩니다\\.\n"
+            "• 다른 토픽\\(잡담방 등\\)은 건드리지 않습니다\\.\n\n"
+            "> 이제 이 토픽에서 `/startgame` 으로 게임을 시작하세요\\!",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    else:
+        await msg.reply_text(
+            "✅ *마피아 토픽 지정이 해제되었습니다\\.*\n\n"
+            "_General 토픽\\(또는 일반 그룹\\) 모드로 동작합니다\\._\n\n"
+            "> 특정 토픽으로 지정하려면 *그 토픽 안에서* 다시 `/마피아토픽설정` 을 입력하세요\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+
+    log.info("토픽 설정: group_id=%s topic_id=%s by user=%s",
+             group_id, topic_id, user.id)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

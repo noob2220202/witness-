@@ -22,6 +22,7 @@ from handlers.group_cmd import (
     endgame_handler,
     migrate_handler,
     chat_guard_handler,
+    topic_set_handler,
 )
 from handlers.dm_cmd import start_handler
 from handlers.callbacks import callback_router
@@ -108,6 +109,13 @@ def main() -> None:
     # ── InlineKeyboard 콜백 ──────────────────────────────────
     app.add_handler(CallbackQueryHandler(setting_callback_router, pattern=r"^set:"))
     app.add_handler(CallbackQueryHandler(callback_router))
+
+    # ── 마피아 토픽 설정 (/마피아토픽설정, /토픽설정, /토픽) ────
+    # role_lookup 보다 먼저 등록해 한국어 명령으로 가로채이지 않게 함
+    _topic_cmd = filters.ChatType.GROUPS & filters.Regex(
+        r'^/(마피아토픽설정|토픽설정|마피아토픽|토픽)(@[\w]+)?($|\s)'
+    )
+    app.add_handler(MessageHandler(_topic_cmd, topic_set_handler), group=-1)
 
     # ── 역할 도감 (/도감, /마피아, /경찰 등 한국어 명령) ────────
     # 그룹 + DM 모두에서 동작 / chat_guard 보다 먼저 등록(group=-1)
