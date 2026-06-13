@@ -316,7 +316,8 @@ async def _start_night(
     await _send_group(gs, bot,
         night_start_msg(gs.day_number, gs.alive_count()))
 
-    await send_role_dms(bot, gs)
+    # 역할 배정 DM 은 게임 시작(begin) 시 1회만 전송한다.
+    # 매 밤 재전송하면 사망자에게도 "직업이 배정되었습니다" 가 날아가므로 호출하지 않는다.
     await send_night_action_dms(bot, gs)
 
     schedule_phase(context, gid, gs.timers["night"], "night")
@@ -327,9 +328,11 @@ async def send_role_dms(bot: Bot, gs: GameState) -> None:
     from messages.templates import role_assignment_msg
 
     mafia_names = [p.display for p in gs.players.values()
-                   if p.faction == Faction.MAFIA]
+                   if p.faction == Faction.MAFIA and p.is_alive]
 
     for uid, player in gs.players.items():
+        if not player.is_alive:
+            continue
         role = ROLES.get(player.role_key)
         if not role:
             continue
@@ -344,7 +347,7 @@ async def send_role_dms(bot: Bot, gs: GameState) -> None:
 
     # 마피아 팀 채팅 (팀 구성 알림)
     mafia_ids = [uid for uid, p in gs.players.items()
-                 if p.faction == Faction.MAFIA]
+                 if p.faction == Faction.MAFIA and p.is_alive]
     if mafia_ids:
         team_msg = mafia_team_msg(mafia_names)
         for uid in mafia_ids:
