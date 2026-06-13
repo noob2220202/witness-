@@ -125,7 +125,9 @@ async def advance_phase(
     # ── NIGHT → DAY_ANNOUNCE ───────────────────────────────────
     if gs.phase == Phase.NIGHT:
         gs.phase = Phase.NIGHT_RESOLVE
-        events = resolve_night(gs)
+        # resolve_night 는 '사망자 user_id 목록(list[int])'을 반환한다.
+        # (사망 공지는 아래 dead_pairs / day_announce_msg 에서 처리)
+        resolve_night(gs)
 
         # 조사 결과 DM 발송 (스파이는 마피아 팀 전체에 공유)
         for actor_id, result in gs.investigate_results.items():
@@ -172,10 +174,6 @@ async def advance_phase(
 
         await _send_transition_gif(bot, gid, DAY_GIF, gs.topic_id)
         await _send_group(gs, bot, day_announce_msg(gs, dead_pairs))
-
-        # 이벤트 메시지 (마녀, 성직자 등)
-        if events:
-            await _send_group(gs, bot, "\n".join(events))
 
         # 승리 판정 (밤 결산 후)
         win = check_win(gs)
