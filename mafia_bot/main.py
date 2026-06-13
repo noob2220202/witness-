@@ -42,6 +42,16 @@ async def post_init(application: Application) -> None:
     config.BOT_USERNAME = me.username
     log.info("봇 준비: @%s", me.username)
 
+    # JobQueue 점검: 없으면 낮/밤 타이머가 동작하지 않아 게임이 멈춘다.
+    if application.job_queue is None:
+        log.error(
+            "⚠️ JobQueue 가 설정되지 않았습니다! 페이즈 타이머가 동작하지 않아 "
+            "낮이 끝나지 않고 게임이 진행되지 않습니다. "
+            "다음을 설치하세요: pip install \"python-telegram-bot[job-queue]==21.9\""
+        )
+    else:
+        log.info("JobQueue 정상 작동 — 페이즈 타이머 사용 가능")
+
     # 재시작 복구: 진행 중인 게임이 있으면 해당 페이즈에서 재개
     from game.state import Phase
     from handlers.phase_jobs import advance_phase, schedule_phase

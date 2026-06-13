@@ -45,6 +45,16 @@ def schedule_phase(
     tag: str,
 ) -> None:
     """지정된 딜레이 후 advance_phase 를 호출하는 one-shot job을 예약."""
+    if context.job_queue is None:
+        # JobQueue 미설치(apscheduler 누락) 시 페이즈 타이머가 동작하지 않아
+        # 낮이 끝나지 않고 게임이 멈춘다. 원인을 즉시 드러낸다.
+        log.error(
+            "JobQueue 가 None 입니다! 페이즈 타이머(%s)를 예약할 수 없습니다. "
+            "'pip install python-telegram-bot[job-queue]' (apscheduler) 설치가 필요합니다.",
+            tag,
+        )
+        return
+
     job_name = f"phase_{group_id}"
     for job in context.job_queue.get_jobs_by_name(job_name):
         job.schedule_removal()
@@ -64,10 +74,10 @@ def schedule_phase(
 
 def cancel_phase_job(context: ContextTypes.DEFAULT_TYPE, gs: GameState) -> None:
     """현재 등록된 페이즈 타이머 취소."""
-    if gs.phase_job:
+    if gs.phase_job and context.job_queue is not None:
         for job in context.job_queue.get_jobs_by_name(gs.phase_job):
             job.schedule_removal()
-        gs.phase_job = None
+    gs.phase_job = None
 
 
 async def _phase_timeout_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -147,7 +157,8 @@ async def advance_phase(
                         await _safe_dm(bot, dead_p.lover_id,
                             lover_dead_dm(dead_p.display))
 
-        gs.day_number += 1
+        # day_number 는 밤 시작 시 증가시킨다(_start_night). 여기서는 증가 X.
+        # 밤 N → 낮 N 로 같은 일차를 유지해야 함.
         gs.phase = Phase.DAY_ANNOUNCE
 
         # 사망자 공지 빌드
@@ -266,8 +277,9 @@ async def _start_night(
     context: ContextTypes.DEFAULT_TYPE,
     gs: GameState,
 ) -> None:
-    """밤 페이즈 시작: 과학자 부활 → 영상 → 메시지 → 행동 DM 전송 → 타이머 예약."""
+    """밤 페이즈 시작: 일차 증가 → 과학자 부활 → 영상 → 메시지 → 행동 DM 전송 → 타이머 예약."""
     gs.phase = Phase.NIGHT
+    gs.day_number += 1   # 첫 밤은 begin_handler 에서 day=1 로 직접 설정하므로 _start_night 미경유
     gid = gs.group_chat_id
 
     # 과학자 부활 처리
