@@ -1198,7 +1198,25 @@ def test_belongs_to_topic_general_game():
 # RUN ALL TESTS
 # ═════════════════════════════════════════════════════════════
 
+def test_investigate_result_escapes_name():
+    """경찰/자경단 조사 결과에서 특수문자 이름이 이스케이프되는지 (DM 전송 실패 방지)."""
+    from game.night_engine import resolve_night
+    gs = GameState(group_chat_id=-1, creator_id=1)
+    cop = new_player("police", display="@cop")
+    maf = new_player("mafioso", display="@bad_guy.01")  # _ 와 . 포함
+    gs.players[cop.user_id] = cop
+    gs.players[maf.user_id] = maf
+    gs.night_actions = {cop.user_id: maf.user_id}
+    resolve_night(gs)
+    res = gs.investigate_results.get(cop.user_id, "")
+    if "\\_" in res and "\\." in res:
+        ok("investigate_result_escapes_name")
+    else:
+        fail("investigate_result_escapes_name", f"미이스케이프: {res!r}")
+
+
 def run_all():
+    test_investigate_result_escapes_name()
     test_nominee_top_voted()
     test_nominee_tie_none()
     test_judgment_approve_executes()

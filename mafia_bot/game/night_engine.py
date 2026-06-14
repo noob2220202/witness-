@@ -3,6 +3,12 @@ from game.state import GameState, PlayerState, Faction, WinCondition  # noqa: F4
 from game.roles import ROLES
 
 
+def _esc(text: str) -> str:
+    """MarkdownV2 특수문자 이스케이프 (조사 결과 DM 의 이름/직업명용)."""
+    special = r'\_*[]()~`>#+-=|{}.!'
+    return ''.join(f'\\{c}' if c in special else c for c in str(text))
+
+
 def resolve_night(gs: GameState) -> list[int]:
     """
     밤 행동 결산.
@@ -218,17 +224,17 @@ def resolve_night(gs: GameState) -> list[int]:
 
         if role.night_action == "INVESTIGATE_MAFIA":
             if target.role_key == "godfather":
-                investigate_results[actor_id] = f"🔍 *{target.display}* — 시민"
+                investigate_results[actor_id] = f"🔍 *{_esc(target.display)}* — 시민"
             elif target.faction == Faction.MAFIA:
-                investigate_results[actor_id] = f"🔍 *{target.display}* — ⚠️ *마피아*"
+                investigate_results[actor_id] = f"🔍 *{_esc(target.display)}* — ⚠️ *마피아*"
             else:
-                investigate_results[actor_id] = f"🔍 *{target.display}* — 시민"
+                investigate_results[actor_id] = f"🔍 *{_esc(target.display)}* — 시민"
 
         elif role.night_action == "INVESTIGATE_ROLE":
             role_name = ROLES[target.role_key].name if target.role_key in ROLES else "???"
             if target.role_key == "fraud" and target.disguise_role:
                 role_name = target.disguise_role
-            investigate_results[actor_id] = f"🔍 *{target.display}* — {role_name}"
+            investigate_results[actor_id] = f"🔍 *{_esc(target.display)}* — {_esc(role_name)}"
 
         elif role.night_action == "COMPARE":
             # 심리학자: night_target(1번째) + compare_target(2번째)
@@ -238,7 +244,7 @@ def resolve_night(gs: GameState) -> list[int]:
                 same = target.faction == second.faction
                 result = "같은 팀입니다 ✅" if same else "다른 팀입니다 ❌"
                 investigate_results[actor_id] = (
-                    f"🧠 *{target.display}* 과 *{second.display}* — {result}"
+                    f"🧠 *{_esc(target.display)}* 과 *{_esc(second.display)}* — {result}"
                 )
             else:
                 investigate_results[actor_id] = "🧠 대상 선택이 완료되지 않았습니다\\."
@@ -248,17 +254,17 @@ def resolve_night(gs: GameState) -> list[int]:
             if tracked_action and tracked_action in gs.players:
                 dest = gs.players[tracked_action]
                 investigate_results[actor_id] = (
-                    f"🔎 *{target.display}* 은 *{dest.display}* 에게 행동했습니다\\."
+                    f"🔎 *{_esc(target.display)}* 은 *{_esc(dest.display)}* 에게 행동했습니다\\."
                 )
             else:
                 investigate_results[actor_id] = (
-                    f"🔎 *{target.display}* 은 오늘 밤 아무것도 하지 않았습니다\\."
+                    f"🔎 *{_esc(target.display)}* 은 오늘 밤 아무것도 하지 않았습니다\\."
                 )
 
         elif role.night_action == "INVESTIGATE_CULT":
             is_cult = target.faction == Faction.CULT
             investigate_results[actor_id] = (
-                f"🙏 *{target.display}* — "
+                f"🙏 *{_esc(target.display)}* — "
                 + ("교주팀입니다 ⚠️" if is_cult else "교주팀이 아닙니다")
             )
 
@@ -266,8 +272,8 @@ def resolve_night(gs: GameState) -> list[int]:
             if not target.is_alive:
                 dead_role = ROLES.get(target.role_key)
                 investigate_results[actor_id] = (
-                    f"👻 *{target.display}* 의 직업: "
-                    + (dead_role.name if dead_role else "???")
+                    f"👻 *{_esc(target.display)}* 의 직업: "
+                    + _esc(dead_role.name if dead_role else "???")
                 )
 
     # 기자 결과 저장 (다음 낮에 공개)

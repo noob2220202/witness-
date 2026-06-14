@@ -364,8 +364,8 @@ async def send_night_action_dms(bot: Bot, gs: GameState) -> None:
             continue
 
         if not role.night_action:
-            await _safe_dm(bot, uid, no_night_action_msg(role))
-            # 밤 행동 없으면 즉시 제출 완료 처리
+            # 밤 행동 없는 직업: 매 밤 DM 보내지 않음(직업 카드 도배 방지).
+            # 진행을 위해 제출 완료 처리만 한다.
             player.night_action_submitted = True
             continue
 
