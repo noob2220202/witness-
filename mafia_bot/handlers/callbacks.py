@@ -143,14 +143,18 @@ async def handle_night_target(
     gs = games.get(group_id)
 
     if gs is None or gs.phase != Phase.NIGHT:
+        cur = gs.phase.value if gs else "no-game"
+        log.info("밤행동 거부: actor=%s phase=%s(기대 night) target=%s", actor_id, cur, target_id)
         await query.answer("❌ 밤 행동 단계가 아닙니다.", show_alert=True)
         return
 
     actor = gs.players.get(actor_id)
     if not actor or not actor.is_alive:
+        log.info("밤행동 거부: actor=%s 참가자아님/사망", actor_id)
         await query.answer("❌ 게임 참가자가 아니거나 이미 사망했습니다.", show_alert=True)
         return
     if actor.night_action_submitted:
+        log.info("밤행동 거부: actor=%s 이미제출(submitted=True) role=%s", actor_id, actor.role_key)
         await query.answer("ℹ️ 이미 행동을 제출했습니다.", show_alert=True)
         return
 

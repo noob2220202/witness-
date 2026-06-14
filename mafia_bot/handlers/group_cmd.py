@@ -414,10 +414,10 @@ async def topic_set_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def chat_guard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    게임 진행 중(밤·낮 토론·투표) 그룹 메시지를 감시.
-    - 사망한 플레이어
-    - 게임에 참여하지 않은 유저
-    위 두 경우의 메시지를 즉시 삭제.
+    게임 진행 중 그룹 메시지를 감시.
+    - 밤(NIGHT): 조건 없이 모든 채팅 삭제
+    - 그 외 페이즈: 사망자·미참여자 메시지만 삭제
+    토픽에 묶인 게임이면 해당 토픽 메시지만 대상.
     """
     msg = update.effective_message
     if not msg:
@@ -446,7 +446,10 @@ async def chat_guard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     should_delete = False
 
-    if player is None:
+    if gs.phase in (Phase.NIGHT, Phase.NIGHT_RESOLVE):
+        # 밤에는 조건 없이 모든 채팅 삭제 (생존자 포함)
+        should_delete = True
+    elif player is None:
         # 미참여자
         should_delete = True
     elif not player.is_alive:

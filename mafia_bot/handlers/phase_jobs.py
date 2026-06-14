@@ -699,7 +699,7 @@ async def _send_group(gs: GameState, bot: Bot, text: str, **kwargs):
 
 
 async def _safe_dm(bot: Bot, user_id: int, text: str, **kwargs):
-    """DM 전송. DM 미개통 시 무시."""
+    """DM 전송. DM 미개통 시 무시. MarkdownV2 실패 시 일반 텍스트로 재시도."""
     try:
         return await bot.send_message(
             chat_id=user_id,
@@ -708,8 +708,18 @@ async def _safe_dm(bot: Bot, user_id: int, text: str, **kwargs):
             **kwargs,
         )
     except Exception as e:
-        log.warning("DM 전송 실패 user_id=%s: %s", user_id, e)
-        return None
+        # MarkdownV2 파싱 오류로 실패하면 reply_markup(밤 행동 버튼)까지 통째로 사라진다.
+        # → 일반 텍스트로 재시도해서 버튼이라도 살린다.
+        log.warning("DM MarkdownV2 실패 user_id=%s: %s — 일반 텍스트로 재시도", user_id, e)
+        try:
+            return await bot.send_message(
+                chat_id=user_id,
+                text=_strip_md(text),
+                **kwargs,
+            )
+        except Exception as e2:
+            log.warning("DM 전송 실패 user_id=%s: %s", user_id, e2)
+            return None
 
 
 def esc_cb(text: str) -> str:
