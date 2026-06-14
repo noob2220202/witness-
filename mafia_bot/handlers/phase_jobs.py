@@ -136,6 +136,8 @@ async def advance_phase(
         resolve_night(gs)
 
         # 조사 결과 DM 발송 (스파이는 마피아 팀 전체에 공유)
+        log.info("밤 결산: group=%s 조사결과 %d건 night_actions=%s",
+                 gid, len(gs.investigate_results), dict(gs.night_actions))
         for actor_id, result in gs.investigate_results.items():
             await _safe_dm(bot, actor_id, investigate_result_dm(result))
             actor = gs.players.get(actor_id)

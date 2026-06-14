@@ -52,21 +52,49 @@ async def post_init(application: Application) -> None:
     else:
         log.info("JobQueue 정상 작동 — 페이즈 타이머 사용 가능")
 
-    # 재시작 복구: 진행 중인 게임이 있으면 해당 페이즈에서 재개
+    # 재시작 복구: 진행 중인 게임을 '같은 페이즈에서' 이어가도록 타이머만 재예약.
+    # (기존엔 advance_phase 로 강제 진행해 밤/낮이 통째로 스킵되던 문제)
     from game.state import Phase
     from handlers.phase_jobs import advance_phase, schedule_phase
     import config as cfg
 
     games: dict = application.bot_data.get("games", {})
+
+    # 구버전 pickle 호환: 새로 추가된 필드가 없는 옛 게임에 기본값 보강
+    for gs in games.values():
+        if not hasattr(gs, "topic_id"):
+            gs.topic_id = None
+        if not hasattr(gs, "accused_id"):
+            gs.accused_id = None
+        if not hasattr(gs, "judgment_votes"):
+            gs.judgment_votes = {}
+
+    # 페이즈별 재개 타이머 (고정 시간이면 값, None 이면 gs.timers[tag] 사용)
+    resume_timer = {
+        Phase.NIGHT:         ("night",    None),
+        Phase.DAY_ANNOUNCE:  ("result",   cfg.RESULT_DELAY),
+        Phase.DAY_DISCUSS:   ("discuss",  None),
+        Phase.VOTE:          ("vote",     None),
+        Phase.FINAL_DEFENSE: ("defense",  cfg.FINAL_DEFENSE_TIMEOUT),
+        Phase.JUDGMENT:      ("judgment", cfg.JUDGMENT_TIMEOUT),
+    }
+
     for group_id, gs in list(games.items()):
         if gs.phase in (Phase.LOBBY, Phase.ENDED):
             continue
-        # 진행 중 게임: 현재 페이즈를 즉시 advance (타임아웃 처리)
-        log.info("재시작 복구: group_id=%s phase=%s", group_id, gs.phase)
         try:
-            await advance_phase(application, gs)
+            if gs.phase in resume_timer:
+                tag, fixed = resume_timer[gs.phase]
+                delay = fixed if fixed is not None else gs.timers.get(tag, 60)
+                log.info("재시작 복구: group=%s phase=%s → 타이머 재예약(%ss)",
+                         group_id, gs.phase.value, delay)
+                schedule_phase(application, group_id, delay, tag)
+            else:
+                # 전환 중(resolve) 페이즈는 마저 진행
+                log.info("재시작 복구: group=%s phase=%s → 진행", group_id, gs.phase.value)
+                await advance_phase(application, gs)
         except Exception as e:
-            log.warning("복구 실패 group_id=%s: %s", group_id, e)
+            log.warning("복구 실패 group=%s: %s", group_id, e)
 
 
 def main() -> None:
